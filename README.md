@@ -10,8 +10,8 @@ The NIC capture/transmit runs on [NVIDIA daqiri](https://github.com/NVIDIA/daqir
 
 This was developed and tested with two hosts connected with a pair of 400 GbE NVIDIA ConnectX-7.
 
-- **Receiver** — RTX 5070 (Blackwell, `sm_120a`, device 1); runs the correlator. The consumer GeForce can't GPUDirect, hence the host-bounce capture.
-- **Transmitter** — RTX A6000 (Ampere, `sm_86`); runs the analytic-sky TX over GPUDirect.
+- **Receiver** — RTX 5070 (Blackwell); runs the correlator. The consumer GeForce can't GPUDirect, so we use host DRAM.
+- **Transmitter** — RTX A6000 (Ampere); runs the analytic-sky TX over GPUDirect.
 
 You need a CUDA GPU + ConnectX 6 or later NIC, change the `-arch` in `scripts/build.sh`, the `--device` / GPU UUID in the run scripts, and the NIC address + `cpu_core`s in the YAMLs.
 
@@ -20,7 +20,7 @@ You need a CUDA GPU + ConnectX 6 or later NIC, change the `-arch` in `scripts/bu
 Build on both hosts, then run the correlator on the receiver and the signal source on the transmitter:
 
 ```bash
-bash scripts/build.sh    # bf_rx_host_corr + bf_peek32 (sm_120a) and bf_tx_fp8 (sm_86)
+bash scripts/build.sh    # bf_rx_host_corr + bf_peek32 and bf_tx_fp8
 bash scripts/run_rx.sh   # receiver:    correlator -> /dev/shm/bf_corr32
 bash scripts/run_tx.sh   # transmitter: analytic sky (star + orbiting planet)
 ./bf_peek32 120          # view a channel of the image cube (120 = high freq, bright planet)
