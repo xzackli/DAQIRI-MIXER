@@ -36,3 +36,5 @@ The two YAMLs are [daqiri](https://github.com/NVIDIA/daqiri) stream configs (the
 - **`rx_beamform_host.yaml`** — host-bounce capture on the receiver. Consumer GeForce GPUs can't GPUDirect, so in this example we bounce off host with `kind: "huge"` (host hugepages), with `engine: "ibverbs"` (MPRQ DevX), a single RX queue, and a flow rule steering `udp_dst: 4096` to it.
 
 Adjust these for your hardware: the NIC PCIe address (`0000:c7:00.0`), the `cpu_core`/`master_core` assignments, and `num_bufs`/`buf_size` (sized here for the 8256 B jumbo heap).
+
+The wire format itself (packet/heap sizes, the `seq` field offset, packets-per-batch) lives in **two** places: the YAMLs above, which configure daqiri's transport, and `src/bf_wire.h`, the compile-time `#define`s the `bf_tx`/`bf_rx` kernels build against. There's no shared source of truth — if you change the wire format, update both to match.
