@@ -5,7 +5,7 @@
 # (e.g. --seconds 60 --astar 2 --rho 0.35 --torbit 3). TX_RATE caps snaps/s so the receiver stays
 # lossless (a real F-engine streams at a fixed ADC rate); TX_RATE=0 = firehose.
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # repo root (sources, configs, binaries live here)
 IMG="${DAQIRI_IMG:-daqiri:local}"
 A6000="${A6000_UUID:-GPU-738db291-5695-f1de-730a-775913dc555b}"
 TX_RATE="${TX_RATE:-7000}"

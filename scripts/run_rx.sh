@@ -5,7 +5,7 @@
 # Args pass through to bf_rx_host_corr (e.g. --seconds 45 --fps 20 --device 1).
 # For full line rate, pin the receiver GPU clocks first (the 5070 idles PCIe to Gen1).
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # repo root (sources, configs, binaries live here)
 IMG="${DAQIRI_IMG:-daqiri:local}"
 exec docker run --rm --privileged --network host --gpus all \
   -e NVIDIA_DISABLE_REQUIRE=1 \

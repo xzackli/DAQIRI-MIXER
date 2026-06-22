@@ -4,7 +4,7 @@
 #   transmitter (A6000): bf_tx_fp8 (analytic-sky test signal source)
 # Every binary builds on either host (cross-arch builds are harmless); each box runs its own.
 set -euo pipefail
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; IMG="${DAQIRI_IMG:-daqiri:local}"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; IMG="${DAQIRI_IMG:-daqiri:local}"  # repo root (sources live here)
 DQ="-I/opt/daqiri/include -L/opt/daqiri/lib -ldaqiri -lcuda -L/usr/local/cuda/lib64/stubs -Xlinker -rpath -Xlinker /opt/daqiri/lib -lcudart -lrt -lpthread"
 docker run --rm -v "$DIR":/work -w /work --entrypoint bash "$IMG" -lc "
   set -e

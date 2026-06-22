@@ -1,5 +1,5 @@
-/* bf_cgemm.cuh -- complete int8 tensor-core COVARIANCE CORRELATOR. Standard nvcuda::wmma only: no ccglib,
- * no inline PTX, no patches. One kernel computes V = X * X^H per batch (= per frequency channel).
+/* bf_cgemm.cuh -- int8 tensor-core COVARIANCE CORRELATOR in standard nvcuda::wmma. One kernel computes
+ * V = X * X^H per batch (= per frequency channel).
  *
  * MATH: complex GEMM C = A*B, planar int8 in / int32 accumulate. A is row-major [M][K]; B is COLUMN-major
  * [K][N]. For V = X*X^H pass A = X and B = conj(X) in the SAME [row][K] layout (B = X with imag negated): the
