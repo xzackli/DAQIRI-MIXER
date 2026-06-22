@@ -10,7 +10,7 @@ The NIC capture/transmit runs on [NVIDIA daqiri](https://github.com/NVIDIA/daqir
 
 This was developed and tested with two hosts connected with a pair of 400 GbE NVIDIA ConnectX-7.
 
-- **Receiver** — RTX 5070 (Blackwell); runs the correlator. The consumer GeForce can't GPUDirect, so we use host DRAM.
+- **Receiver** — RTX 5070 (Blackwell); runs the correlator. GeForce can't GPUDirect, so we use host DRAM.
 - **Transmitter** — RTX A6000 (Ampere); runs the analytic-sky TX over GPUDirect.
 
 You need a CUDA GPU + ConnectX 6 or later NIC, change the `-arch` in `scripts/build.sh`, the `--device` / GPU UUID in the run scripts, and the NIC address + `cpu_core`s in the YAMLs.
