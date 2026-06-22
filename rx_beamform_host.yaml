@@ -1,0 +1,39 @@
+%YAML 1.2
+---
+# Host-bounce beamformer RX (the 5070 can't GPUDirect). ibverbs (MPRQ DevX) captures
+# raw int4 heaps into HOST hugepages (no device MR, NO reorder_configs -- bf_rx_host does
+# the corner-turn/unpack itself on the 5070 after a cudaMemcpy H2D). Single queue/core.
+daqiri:
+  cfg:
+    version: 1
+    stream_type: "raw"
+    engine: "ibverbs"
+    master_core: 3
+    debug: false
+    log_level: "info"
+    loopback: ""
+
+    memory_regions:
+    - name: "Data_RX_HOST"
+      kind: "huge"                    # host capture (was "device" GPUDirect)
+      affinity: 0
+      num_bufs: 16384
+      buf_size: 8320                  # holds the 8256 B jumbo heap
+
+    interfaces:
+    - name: "rx_port"
+      address: 0000:c7:00.0
+      rx:
+        flow_isolation: true
+        queues:
+        - name: "rx_q_0"
+          id: 0
+          cpu_core: 9
+          batch_size: 1024
+          memory_regions:
+            - "Data_RX_HOST"
+        flows:
+        - name: "flow_0"
+          id: 0
+          action: {type: queue, id: 0}
+          match: {udp_src: 4096, udp_dst: 4096}

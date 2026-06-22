@@ -1,0 +1,30 @@
+%YAML 1.2
+---
+# DAQIRI TX for the realtime beamformer (digilab-transmit, ConnectX-7 @ c7:00.0).
+# GPUDirect from the A6000: bf_tx's CUDA kernel writes eth/ip/udp + seq + int4
+# payload straight into these device buffers.  One packet = one antenna's
+# [256 ch x 32 time] heap (8256 B jumbo wire).  bf_tx fills headers itself, so
+# only the daqiri.cfg block is needed here (no bench_tx).
+daqiri:
+  cfg:
+    version: 1
+    stream_type: "raw"
+    master_core: 1            # transmit box is not CPU-isolated; low cores
+    debug: false
+    log_level: "info"
+    loopback: ""
+
+    memory_regions:
+    - {name: "Data_TX_GPU", kind: "device", affinity: 0, num_bufs: 8192, buf_size: 8320}
+
+    interfaces:
+    - name: "tx_port"
+      address: 0000:c7:00.0
+      tx:
+        queues:
+        - name: "tx_q_0"
+          id: 0
+          cpu_core: 2
+          batch_size: 256      # = packets_per_batch = one 256-antenna snapshot
+          memory_regions: ["Data_TX_GPU"]
+          offloads: ["tx_eth_src"]   # NIC fills Ethernet source MAC

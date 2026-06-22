@@ -1,0 +1,26 @@
+# Compiled binaries: ignore the extensionless bf_* build outputs, keep the sources.
+bf_*
+!*.cu
+!*.cuh
+!*.cpp
+!*.h
+!*.py
+
+# CUDA / profiler output
+*.o
+*.ptx
+*.cubin
+*.nsys-rep
+*.qdrep
+*.sqlite
+*.ncu-rep
+
+# Logs / runtime scratch
+*.log
+
+# Editor / OS junk
+*~
+*.swp
+.vscode/
+.idea/
+.DS_Store
