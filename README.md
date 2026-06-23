@@ -4,7 +4,7 @@
 
 ![star + orbiting planet, imaged from V=X·Xᴴ](demo.gif)
 
-A 400-GbE-capable real-time int8 tensor-core covariance correlator on a single GPU. It computes per-channel visibilities `V = X·Xᴴ` at ingress with a tensor-core GEMM, then runs a small batched cuFFT at 20 Hz to image the integrated visibilities at spatial Nyquist. It runs end-to-end at ~380 GbE — ~95% of the 400 GbE line rate — with zero loss. The NIC capture/transmit runs on [NVIDIA DAQIRI](https://github.com/NVIDIA/daqiri), which moves raw Ethernet packets between the ConnectX-7 and the GPU (ibverbs/DPDK engines, GPUDirect, flow steering); everything here links `libdaqiri` and runs inside the `daqiri:local` container.
+A 400-GbE-capable real-time int8 tensor-core covariance correlator on a single GPU. It computes per-channel visibilities `V = X·Xᴴ` with a tensor-core GEMM, then runs a small batched cuFFT at 20 Hz to image the integrated visibilities at spatial Nyquist. It runs end-to-end at ~380 GbE — ~95% of the 400 GbE line rate — with zero loss. The NIC capture/transmit runs on [NVIDIA DAQIRI](https://github.com/NVIDIA/daqiri), which moves raw Ethernet packets between the ConnectX-7 and the GPU (ibverbs/DPDK engines, GPUDirect, flow steering); everything here links `libdaqiri` and runs inside the `daqiri:local` container.
 
 We include a small simulated packet generator (`src/tx_fp8_host.cu`) simulating a 16×16-element array observing an analytic sky — a star and an orbiting planet (the image above). It's a test signal source from a connected host, but in principle could be a CPU or an FPGA. The array is filled and Nyquist-sampled, so one cuFFT of the visibilities forms the full grid of beams across the field of view, imaged as a 128-frequency-channel 32×32 cube.
 
