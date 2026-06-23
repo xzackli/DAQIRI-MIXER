@@ -1,13 +1,13 @@
-/* bf_tx.cu — DAQIRI TX: generate the analytic sky as per-antenna int4 4+4
+/* tx_fp8.cu — DAQIRI TX: generate the analytic sky as per-antenna int4 4+4
  * channelised voltages and DMA them to the NIC via GPUDirect.  Each packet is
  * one antenna's 256-channel snapshot; a CUDA kernel writes the eth/ip/udp
  * header + seq + payload directly into the device packet buffers (no H2D copy
  * of payload).  seq = global packet counter; antenna = seq % NANT.  The planet
  * position advances with wall-clock time so the orbit is real-time.
  *
- * Runs on digilab-transmit (A6000).  Link:
- *   nvcc -O3 -std=c++17 -arch=sm_86 bf_tx.cu -I/opt/daqiri/include \
- *        -L/opt/daqiri/lib -ldaqiri -lcudart -Xlinker -rpath -Xlinker /opt/daqiri/lib -o bf_tx
+ * Build (link against DAQIRI):
+ *   nvcc -O3 -std=c++17 -arch=<sm_XX> tx_fp8.cu -I/opt/daqiri/include \
+ *        -L/opt/daqiri/lib -ldaqiri -lcudart -Xlinker -rpath -Xlinker /opt/daqiri/lib -o tx_fp8
  */
 #include <cuda_runtime.h>
 #include <cuda_fp8.h>
@@ -29,7 +29,7 @@
 #include <vector>
 
 #include <daqiri/daqiri.h>
-#include "bf_wire.h"
+#include "config.h"
 
 #define CK(x) do { cudaError_t e_ = (x); if (e_ != cudaSuccess) { \
   fprintf(stderr, "CUDA %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(e_)); \
@@ -40,7 +40,7 @@ __device__ inline int q_int4(float v) {
     return i < -8 ? -8 : (i > 7 ? 7 : i);
 }
 
-/* One block per packet, BF_NCH threads per block (one per channel).
+/* One block per packet, MIXER_NCH threads per block (one per channel).
  * Writes header template + seq (big-endian @ byte 48) + int4 4+4 payload. */
 __global__ void k_tx_fill(uint8_t* const* pkts, int npkts, uint32_t seq_base,
                           float l, float m, float Astar, const uint8_t* hdr) {
@@ -49,30 +49,30 @@ __global__ void k_tx_fill(uint8_t* const* pkts, int npkts, uint32_t seq_base,
     int c = threadIdx.x;                       // channel 0..255
     uint8_t* pkt = pkts[i];
     uint32_t seq = seq_base + (uint32_t)i;
-    int a  = seq & (BF_NANT - 1);              // antenna = seq % 256
+    int a  = seq & (MIXER_NANT - 1);              // antenna = seq % 256
     int px = a & 15, qy = a >> 4;
 
-    if (c < BF_HDR_BYTES) pkt[c] = hdr[c];     // copy eth/ip/udp template
+    if (c < MIXER_HDR_BYTES) pkt[c] = hdr[c];     // copy eth/ip/udp template
     __syncthreads();
     if (c == 0) {                              // seq, big-endian, bytes 48..51
-        pkt[BF_SEQ_BYTE + 0] = (uint8_t)(seq >> 24);
-        pkt[BF_SEQ_BYTE + 1] = (uint8_t)(seq >> 16);
-        pkt[BF_SEQ_BYTE + 2] = (uint8_t)(seq >> 8);
-        pkt[BF_SEQ_BYTE + 3] = (uint8_t)(seq);
+        pkt[MIXER_SEQ_BYTE + 0] = (uint8_t)(seq >> 24);
+        pkt[MIXER_SEQ_BYTE + 1] = (uint8_t)(seq >> 16);
+        pkt[MIXER_SEQ_BYTE + 2] = (uint8_t)(seq >> 8);
+        pkt[MIXER_SEQ_BYTE + 3] = (uint8_t)(seq);
     }
     // PLANAR fp8 wire: payload = re[4096] | im[4096] = 128 ch x 32 t (4096 samples).
     // fp8 e4m3 has range/precision; no int4 clamp. Beamform math is identical to int4.
-    if (c < BF_NCH / 2) {                          // 128 active channels
-        float Apl = Astar * sqrtf(2.0f * (float)c / (float)(BF_NCH - 1));
+    if (c < MIXER_NCH / 2) {                          // 128 active channels
+        float Apl = Astar * sqrtf(2.0f * (float)c / (float)(MIXER_NCH - 1));
         float phi = (float)M_PI * (px * l + qy * m);
         uint8_t rb = __nv_fp8_e4m3(Astar + Apl * cosf(phi)).__x;
         uint8_t ib = __nv_fp8_e4m3(Apl * sinf(phi)).__x;
-        const int HALF = BF_PAYLOAD_BYTES / 2;     // 4096
+        const int HALF = MIXER_PAYLOAD_BYTES / 2;     // 4096
         #pragma unroll
-        for (int t = 0; t < BF_TPKT; ++t) {
-            int sl = c * BF_TPKT + t;              // sample 0..4096
-            pkt[BF_HDR_BYTES + sl]        = rb;    // re plane
-            pkt[BF_HDR_BYTES + HALF + sl] = ib;    // im plane
+        for (int t = 0; t < MIXER_TPKT; ++t) {
+            int sl = c * MIXER_TPKT + t;              // sample 0..4096
+            pkt[MIXER_HDR_BYTES + sl]        = rb;    // re plane
+            pkt[MIXER_HDR_BYTES + HALF + sl] = ib;    // im plane
         }
     }
 }
@@ -91,18 +91,18 @@ static uint16_t ip_checksum(const void* data, size_t len) {
 }
 static void build_header(uint8_t* h, const uint8_t mac_dst[6],
                          uint32_t ip_src, uint32_t ip_dst, uint16_t port) {
-    std::memset(h, 0, BF_HDR_BYTES);
+    std::memset(h, 0, MIXER_HDR_BYTES);
     auto* eth = (struct ethhdr*)h;
     std::memcpy(eth->h_dest, mac_dst, 6);     // h_source = 0 (NIC tx_eth_src offload)
     eth->h_proto = htons(ETH_P_IP);
     auto* ip = (struct iphdr*)(h + sizeof(struct ethhdr));
     ip->version = 4; ip->ihl = 5; ip->ttl = 64; ip->protocol = IPPROTO_UDP;
-    ip->tot_len = htons(BF_WIRE_BYTES - sizeof(struct ethhdr));
+    ip->tot_len = htons(MIXER_WIRE_BYTES - sizeof(struct ethhdr));
     ip->saddr = htonl(ip_src); ip->daddr = htonl(ip_dst);
     ip->check = 0; ip->check = ip_checksum(ip, sizeof(struct iphdr));
     auto* udp = (struct udphdr*)(h + sizeof(struct ethhdr) + sizeof(struct iphdr));
     udp->source = htons(port); udp->dest = htons(port);
-    udp->len = htons(BF_WIRE_BYTES - sizeof(struct ethhdr) - sizeof(struct iphdr));
+    udp->len = htons(MIXER_WIRE_BYTES - sizeof(struct ethhdr) - sizeof(struct iphdr));
     udp->check = 0;                           // 0 = no UDP checksum (valid)
 }
 
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
     const char* yaml = argv[1];
     int   seconds = 0, device = 0;
     float Astar = 2.0f, rho = 0.35f, torbit = 3.0f, rate = 0.0f;
-    std::string eth_dst = BF_DEF_ETH_DST;
+    std::string eth_dst = MIXER_DEF_ETH_DST;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if      (a == "--seconds" && i+1<argc) seconds = std::atoi(argv[++i]);
@@ -132,25 +132,25 @@ int main(int argc, char** argv) {
 
     uint8_t mac[6];
     if (!parse_mac(eth_dst.c_str(), mac)) { fprintf(stderr, "bad MAC %s\n", eth_dst.c_str()); return 1; }
-    /* one header template per queue: udp_dst = BF_UDP_PORT + q (time-split) */
-    uint8_t h_hdr[BF_NQ * BF_HDR_BYTES];
-    for (int q = 0; q < BF_NQ; ++q)
-        build_header(h_hdr + q * BF_HDR_BYTES, mac, ntohl(inet_addr(BF_DEF_IP_SRC)),
-                     ntohl(inet_addr(BF_DEF_IP_DST)), (uint16_t)(BF_UDP_PORT + q));
-    uint8_t* d_hdr = nullptr; CK(cudaMalloc(&d_hdr, BF_NQ * BF_HDR_BYTES));
-    CK(cudaMemcpy(d_hdr, h_hdr, BF_NQ * BF_HDR_BYTES, cudaMemcpyHostToDevice));
+    /* one header template per queue: udp_dst = MIXER_UDP_PORT + q (time-split) */
+    uint8_t h_hdr[MIXER_NQ * MIXER_HDR_BYTES];
+    for (int q = 0; q < MIXER_NQ; ++q)
+        build_header(h_hdr + q * MIXER_HDR_BYTES, mac, ntohl(inet_addr(MIXER_DEF_IP_SRC)),
+                     ntohl(inet_addr(MIXER_DEF_IP_DST)), (uint16_t)(MIXER_UDP_PORT + q));
+    uint8_t* d_hdr = nullptr; CK(cudaMalloc(&d_hdr, MIXER_NQ * MIXER_HDR_BYTES));
+    CK(cudaMemcpy(d_hdr, h_hdr, MIXER_NQ * MIXER_HDR_BYTES, cudaMemcpyHostToDevice));
 
     if (daqiri::daqiri_init(yaml) != daqiri::Status::SUCCESS) {
         fprintf(stderr, "daqiri_init failed\n"); return 1; }
-    const int port_id = daqiri::get_port_id(BF_TX_IFACE);
-    if (port_id < 0) { fprintf(stderr, "no TX iface %s\n", BF_TX_IFACE); return 1; }
+    const int port_id = daqiri::get_port_id(MIXER_TX_IFACE);
+    if (port_id < 0) { fprintf(stderr, "no TX iface %s\n", MIXER_TX_IFACE); return 1; }
 
     cudaStream_t stream; CK(cudaStreamCreate(&stream));
-    std::vector<uint8_t*> h_ptrs(BF_PPB);
-    uint8_t** d_ptrs = nullptr; CK(cudaMalloc(&d_ptrs, BF_PPB * sizeof(uint8_t*)));
+    std::vector<uint8_t*> h_ptrs(MIXER_PPB);
+    uint8_t** d_ptrs = nullptr; CK(cudaMalloc(&d_ptrs, MIXER_PPB * sizeof(uint8_t*)));
 
-    fprintf(stderr, "[bf_tx] sending to %s udp %d..%d (time-split %dq), rate=%s, Astar=%.2f rho=%.2f Torbit=%.1fs\n",
-            eth_dst.c_str(), BF_UDP_PORT, BF_UDP_PORT + BF_NQ - 1, BF_NQ,
+    fprintf(stderr, "[tx] sending to %s udp %d..%d (time-split %dq), rate=%s, Astar=%.2f rho=%.2f Torbit=%.1fs\n",
+            eth_dst.c_str(), MIXER_UDP_PORT, MIXER_UDP_PORT + MIXER_NQ - 1, MIXER_NQ,
             rate > 0.0f ? (std::to_string((int)rate) + " snaps/s").c_str() : "unthrottled",
             Astar, rho, torbit);
 
@@ -172,7 +172,7 @@ int main(int argc, char** argv) {
         float l = rho * std::cos(w * t), m = rho * std::sin(w * t);
 
         auto* msg = daqiri::create_tx_burst_params();
-        daqiri::set_header(msg, (uint16_t)port_id, 0, BF_PPB, 1);
+        daqiri::set_header(msg, (uint16_t)port_id, 0, MIXER_PPB, 1);
         if (!daqiri::is_tx_burst_available(msg)) {
             daqiri::free_tx_metadata(msg);
             std::this_thread::sleep_for(std::chrono::microseconds(50));
@@ -186,21 +186,21 @@ int main(int argc, char** argv) {
             h_ptrs[i] = (uint8_t*)daqiri::get_segment_packet_ptr(msg, 0, i);
         CK(cudaMemcpyAsync(d_ptrs, h_ptrs.data(), npkts * sizeof(uint8_t*),
                            cudaMemcpyHostToDevice, stream));
-        /* time-split: this burst is snapshot tb = seq_base/256 -> queue tb % BF_NQ */
-        const uint8_t* d_hdr_q = d_hdr + ((seq_base / BF_NANT) % BF_NQ) * BF_HDR_BYTES;
-        k_tx_fill<<<npkts, BF_NCH, 0, stream>>>(d_ptrs, npkts, seq_base, l, m, Astar, d_hdr_q);
-        daqiri::set_all_packet_lengths(msg, {BF_WIRE_BYTES});
+        /* time-split: this burst is snapshot tb = seq_base/256 -> queue tb % MIXER_NQ */
+        const uint8_t* d_hdr_q = d_hdr + ((seq_base / MIXER_NANT) % MIXER_NQ) * MIXER_HDR_BYTES;
+        k_tx_fill<<<npkts, MIXER_NCH, 0, stream>>>(d_ptrs, npkts, seq_base, l, m, Astar, d_hdr_q);
+        daqiri::set_all_packet_lengths(msg, {MIXER_WIRE_BYTES});
         CK(cudaStreamSynchronize(stream));
         if (daqiri::send_tx_burst(msg) == daqiri::Status::SUCCESS) {
-            seq_base += (uint32_t)npkts; snaps += npkts / BF_NANT;
+            seq_base += (uint32_t)npkts; snaps += npkts / MIXER_NANT;
             if ((snaps & 8191) == 0)
-                fprintf(stderr, "[bf_tx] t=%.2fs snaps=%lu l=%+.2f m=%+.2f\n",
+                fprintf(stderr, "[tx] t=%.2fs snaps=%lu l=%+.2f m=%+.2f\n",
                         t, (unsigned long)snaps, l, m);
         } else {
             daqiri::free_all_packets_and_burst_tx(msg);
         }
     }
-    fprintf(stderr, "[bf_tx] stopping (%lu snapshots)\n", (unsigned long)snaps);
+    fprintf(stderr, "[tx] stopping (%lu snapshots)\n", (unsigned long)snaps);
     daqiri::print_stats();
     daqiri::shutdown();
     return 0;

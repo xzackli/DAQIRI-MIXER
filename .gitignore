@@ -1,10 +1,7 @@
-# Compiled binaries: ignore the extensionless bf_* build outputs, keep the sources.
-bf_*
-!*.cu
-!*.cuh
-!*.cpp
-!*.h
-!*.py
+# Compiled binaries (scripts/build.sh writes these to the repo root)
+/rx_host_corr
+/tx_fp8
+/peek32
 
 # CUDA / profiler output
 *.o
@@ -17,6 +14,9 @@ bf_*
 
 # Logs / runtime scratch
 *.log
+
+# Visibility-cube dumps (--dump output)
+*.f32
 
 # Editor / OS junk
 *~

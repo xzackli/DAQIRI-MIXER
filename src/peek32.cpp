@@ -1,8 +1,8 @@
-/* bf_peek32.cpp — ascii view of ONE frequency channel of the correlator SPECTRAL CUBE (/bf_corr32).
- * usage: bf_peek32 [channel]   (default: the channel with the brightest planet).
+/* peek32.cpp — ascii view of ONE frequency channel of the correlator SPECTRAL CUBE (/corr32).
+ * usage: peek32 [channel]   (default: the channel with the brightest planet).
  * Star sits at center (16,16); the planet is off-center and -- because the TX planet amplitude grows
  * with channel (Apl ~ sqrt(c)) -- gets brighter at higher channels. Layout mirrors Corr32 in
- * bf_rx_host_corr.cu: {magic,w,h,nch, write_seq} then img[nch*32*32], vmax[nch], vmin[nch]. */
+ * rx_host_corr.cu: {magic,w,h,nch, write_seq} then img[nch*32*32], vmax[nch], vmin[nch]. */
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -15,7 +15,7 @@ struct Hdr { uint32_t magic, w, h, nch; volatile uint64_t write_seq; };  /* img/
 
 int main(int argc, char** argv) {
     int want = argc > 1 ? atoi(argv[1]) : -1;          /* -1 = auto (brightest planet) */
-    int fd = shm_open("/bf_corr32", O_RDONLY, 0);
+    int fd = shm_open("/corr32", O_RDONLY, 0);
     if (fd < 0) { perror("shm_open"); return 1; }
     struct stat st; if (fstat(fd, &st) != 0) { perror("fstat"); return 1; }
     void* p = mmap(nullptr, st.st_size, PROT_READ, MAP_SHARED, fd, 0); close(fd);

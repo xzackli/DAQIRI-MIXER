@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Run the analytic-sky TX (bf_tx_fp8) on the transmitter (A6000), inside the daqiri:local container.
+# Run the analytic-sky TX (tx_fp8) on the transmitter (A6000), inside the daqiri:local container.
 # The A6000 is GPU index 1 there (a GeForce sits at 0), so target it by UUID and mask the CUDA
-# compat layer (the GeForce trips forward-compat init otherwise). Args pass through to bf_tx_fp8
+# compat layer (the GeForce trips forward-compat init otherwise). Args pass through to tx_fp8
 # (e.g. --seconds 60 --astar 2 --rho 0.35 --torbit 3). TX_RATE caps snaps/s so the receiver stays
 # lossless (a real F-engine streams at a fixed ADC rate); TX_RATE=0 = firehose.
 set -euo pipefail
@@ -16,4 +16,4 @@ exec docker run --rm --privileged --network host \
   --mount type=tmpfs,destination=/usr/local/cuda/compat \
   -v /dev/hugepages:/dev/hugepages --ulimit memlock=-1 \
   -v "$DIR":/work -w /work \
-  --entrypoint /work/bf_tx_fp8 "$IMG" tx_beamform.yaml --rate "$TX_RATE" "$@"
+  --entrypoint /work/tx_fp8 "$IMG" tx_beamform.yaml --rate "$TX_RATE" "$@"
