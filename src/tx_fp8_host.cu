@@ -1,17 +1,19 @@
-/* tx_fp8_host.cu — HOST-memory analytic-sky TX: stream the star+planet sky at LINE RATE (~390 GbE).
+/* tx_fp8_host.cu — HOST-memory analytic-sky TX: stream the star + orbiting-planet sky at LINE RATE (~380 GbE).
  *
- * The GPUDirect sky TX (tx_fp8) caps ~145 G on the A6000's P2P read bandwidth. This bypasses that by
- * sending from host hugepages (memory region kind:"huge"), the way DAQIRI's reorder_seq firehose hits
- * ~98% of 400 GbE -- but carrying the SKY payload instead of sequence data.
+ * Why host memory + pre-fill: writing packets straight from GPU VRAM (GPUDirect) is capped ~145 G by the
+ * A6000's PCIe P2P read bandwidth, and filling each packet's payload on the CPU is memcpy-bound ~50 G --
+ * neither reaches 400. But the sky varies slowly (orbit ~seconds) vs the line rate, so we PRE-FILL each host
+ * TX buffer ONCE on first touch (64 B header + seq @ byte 48 + the antenna's fp8 sky), and the steady-state
+ * loop then just submits bursts with no per-packet writes -- the NIC streams the pre-filled sky from host
+ * hugepages at line rate. When the planet moves only stale payloads are rewritten, STAGGERED a few per burst
+ * (--refresh-budget) so the refresh never stalls the send. (The RX needs none of this -- its MR is a NIC
+ * receive buffer the hardware refills with live packets every snapshot.)
  *
- * Trick: the sky varies slowly (orbit ~seconds) vs the line rate (~24k snapshots/s), so we don't fill
- * payloads per packet (that path is memcpy-bound ~50 G). Instead we PRE-FILL each host TX buffer ONCE on
- * first touch -- 64 B header + seq @ byte 48 + the per-antenna fp8 sky payload -- then the steady-state
- * loop just submits bursts with no per-packet writes, so the NIC streams the pre-filled sky at line rate.
- * Buffer reused at global index G carries antenna G%256 (num_bufs is a multiple of 256), and the bench-
- * style send order makes physical packet order == antenna order, which the RX corner-turn assumes. Seq is
- * baked at first touch; the RX only uses seq%256 (= antenna) + per-burst realignment, so a stale absolute
- * seq is fine.  Iteration 1: STATIC sky (planet fixed at l=rho, m=0). Build: nvcc -arch=<sm_XX>. */
+ * Invariants: a buffer reused at global index G carries antenna G%256 (num_bufs is a multiple of 256), and the
+ * send order makes physical packet order == antenna order, which the RX corner-turn assumes; seq is baked at
+ * first touch (the RX only uses seq%256 + per-burst realign, so a stale absolute seq is fine). The deep pool
+ * (num_bufs=16384) is required -- at line rate the NIC has more packets in flight than a shallow pool holds,
+ * so reusing a buffer the NIC hasn't sent yet tears packets. Build: nvcc -arch=<sm_XX>. */
 #include <cuda_runtime.h>
 #include <cuda_fp8.h>
 #include <arpa/inet.h>
