@@ -43,7 +43,7 @@ __device__ inline int q_int4(float v) {
 /* One block per packet, MIXER_NCH threads per block (one per channel).
  * Writes header template + seq (big-endian @ byte 48) + int4 4+4 payload. */
 __global__ void k_tx_fill(uint8_t* const* pkts, int npkts, uint32_t seq_base,
-                          float l, float m, float Astar, const uint8_t* hdr) {
+                          float l, float m, const uint8_t* hdr) {
     int i = blockIdx.x;
     if (i >= npkts) return;
     int c = threadIdx.x;                       // channel 0..255
@@ -63,7 +63,8 @@ __global__ void k_tx_fill(uint8_t* const* pkts, int npkts, uint32_t seq_base,
     // PLANAR fp8 wire: payload = re[4096] | im[4096] = 128 ch x 32 t (4096 samples).
     // fp8 e4m3 has range/precision; no int4 clamp. Beamform math is identical to int4.
     if (c < MIXER_NCH / 2) {                          // 128 active channels
-        float Apl = Astar * sqrtf(2.0f * (float)c / (float)(MIXER_NCH - 1));
+        const float Astar = 2.0f;                  // star amplitude (fits fp8 headroom)
+        float Apl = 0.82f * Astar * sqrtf(2.0f * (float)c / (float)(MIXER_NCH - 1));  // planet ~50% of star
         float phi = (float)M_PI * (px * l + qy * m);
         uint8_t rb = __nv_fp8_e4m3(Astar + Apl * cosf(phi)).__x;
         uint8_t ib = __nv_fp8_e4m3(Apl * sinf(phi)).__x;
@@ -111,17 +112,16 @@ static void on_sig(int) { g_stop = 1; }
 
 int main(int argc, char** argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s <config.yaml> [--seconds N] [--rate S] "
-        "[--astar A] [--rho R] [--torbit S] [--device D] [--eth-dst MAC]\n", argv[0]);
+        "[--rho R] [--torbit S] [--device D] [--eth-dst MAC]\n", argv[0]);
         return 1; }
     const char* yaml = argv[1];
     int   seconds = 0, device = 0;
-    float Astar = 2.0f, rho = 0.35f, torbit = 3.0f, rate = 0.0f;
+    float rho = 0.35f, torbit = 3.0f, rate = 0.0f;
     std::string eth_dst = MIXER_DEF_ETH_DST;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         if      (a == "--seconds" && i+1<argc) seconds = std::atoi(argv[++i]);
         else if (a == "--rate"    && i+1<argc) rate    = std::atof(argv[++i]);  /* snaps/s; 0=unthrottled */
-        else if (a == "--astar"   && i+1<argc) Astar   = std::atof(argv[++i]);
         else if (a == "--rho"     && i+1<argc) rho     = std::atof(argv[++i]);
         else if (a == "--torbit"  && i+1<argc) torbit  = std::atof(argv[++i]);
         else if (a == "--device"  && i+1<argc) device  = std::atoi(argv[++i]);
@@ -149,10 +149,10 @@ int main(int argc, char** argv) {
     std::vector<uint8_t*> h_ptrs(MIXER_PPB);
     uint8_t** d_ptrs = nullptr; CK(cudaMalloc(&d_ptrs, MIXER_PPB * sizeof(uint8_t*)));
 
-    fprintf(stderr, "[tx] sending to %s udp %d..%d (time-split %dq), rate=%s, Astar=%.2f rho=%.2f Torbit=%.1fs\n",
+    fprintf(stderr, "[tx] sending to %s udp %d..%d (time-split %dq), rate=%s, rho=%.2f Torbit=%.1fs\n",
             eth_dst.c_str(), MIXER_UDP_PORT, MIXER_UDP_PORT + MIXER_NQ - 1, MIXER_NQ,
             rate > 0.0f ? (std::to_string((int)rate) + " snaps/s").c_str() : "unthrottled",
-            Astar, rho, torbit);
+            rho, torbit);
 
     const float w = 2.0f * (float)M_PI / torbit;
     /* pace one snapshot per interval so we don't overdrive the receiver's GPU
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
                            cudaMemcpyHostToDevice, stream));
         /* time-split: this burst is snapshot tb = seq_base/256 -> queue tb % MIXER_NQ */
         const uint8_t* d_hdr_q = d_hdr + ((seq_base / MIXER_NANT) % MIXER_NQ) * MIXER_HDR_BYTES;
-        k_tx_fill<<<npkts, MIXER_NCH, 0, stream>>>(d_ptrs, npkts, seq_base, l, m, Astar, d_hdr_q);
+        k_tx_fill<<<npkts, MIXER_NCH, 0, stream>>>(d_ptrs, npkts, seq_base, l, m, d_hdr_q);
         daqiri::set_all_packet_lengths(msg, {MIXER_WIRE_BYTES});
         CK(cudaStreamSynchronize(stream));
         if (daqiri::send_tx_burst(msg) == daqiri::Status::SUCCESS) {

@@ -1,0 +1,23 @@
+%YAML 1.2
+---
+# HOST-memory analytic-sky TX (for src/tx_fp8_host.cu): NIC DMA-reads the sky from host hugepages
+# (kind: "huge"), bypassing the ~145 G single-GPU GPUDirect read ceiling -> line rate. num_bufs is a
+# multiple of 256 so a reused buffer keeps its antenna (= seq%256); buf_size holds the 8256 B jumbo heap.
+daqiri:
+  cfg:
+    version: 1
+    stream_type: "raw"
+    master_core: 1
+    debug: false
+    log_level: "info"
+    loopback: ""
+
+    memory_regions:
+    - {name: "Data_TX_HOST", kind: "huge", affinity: 0, num_bufs: 16384, buf_size: 8320}
+
+    interfaces:
+    - name: "tx_port"
+      address: 0000:c7:00.0
+      tx:
+        queues:
+        - {name: "tx_q_0", id: 0, batch_size: 1024, cpu_core: 2, memory_regions: ["Data_TX_HOST"], offloads: ["tx_eth_src"], pacing_mbps: 380000}

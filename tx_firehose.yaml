@@ -1,0 +1,41 @@
+%YAML 1.2
+---
+# Line-rate THROUGHPUT source (used by scripts/run_thru.sh, NOT the sky demo).
+# HOST-memory raw TX (kind: "huge" = host hugepages, NOT GPUDirect): the NIC DMA-reads
+# packets straight from host RAM, so it is not bound by the ~145 G single-GPU GPUDirect
+# ceiling that caps tx_fp8 -- it drives the link to ~98% of 400 GbE. It emits sequence
+# data (incrementing seq), so the receiver's image is meaningless here; the point is to
+# show the datapath + correlator keep up (NIC rate, imissed=0). For the correct star+
+# planet image, use the analytic-sky tx_fp8 (scripts/run_tx.sh) instead.
+daqiri:
+  cfg:
+    version: 1
+    stream_type: "raw"
+    master_core: 1
+    debug: false
+    log_level: "info"
+    loopback: ""
+
+    memory_regions:
+    - {name: "Data_TX_CPU", kind: "huge", affinity: 0, num_bufs: 16384, buf_size: 8128}
+
+    interfaces:
+    - name: "tx_port"
+      address: 0000:c7:00.0
+      tx:
+        queues:
+        - {name: "tx_q_0", id: 0, batch_size: 1024, cpu_core: 2, memory_regions: ["Data_TX_CPU"], offloads: ["tx_eth_src"]}
+
+bench_tx:
+  interface_name: "tx_port"
+  cpu_core: 3
+  batch_size: 1024
+  payload_size: 8000
+  header_size: 64
+  eth_dst_addr: a0:88:c2:0d:5e:28
+  ip_src_addr: 10.0.0.1
+  ip_dst_addr: 10.0.0.2
+  udp_src_port: 4096
+  udp_dst_port: 4096
+  sequence_number_offset: 0
+  sequence_number_start: 0
