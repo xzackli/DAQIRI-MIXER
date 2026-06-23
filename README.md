@@ -4,9 +4,9 @@
 
 ![star + orbiting planet, imaged from V=X·Xᴴ](demo.gif)
 
-A 400-GbE-capable real-time int8 tensor-core covariance correlator on a single GPU. It computes per-channel visibilities `V = X·Xᴴ` at ingress with a tensor-core GEMM, then runs a small batched cuFFT at 20 Hz to image the integrated visibilities at spatial Nyquist — a 128-freq-channel 32×32 cube. The 16×16 array is filled and Nyquist-sampled, so that image is the full grid of beams in the field of view (above: toy packet generator input). The analytic-sky transmitter `src/tx_fp8_host.cu` is a test signal source from a connected host with a GPU, but this could in principle be an FPGA. This code takes in a 400 GbE F-engine stream at ~98% of line rate. 
+A 400-GbE-capable real-time int8 tensor-core covariance correlator on a single GPU. It computes per-channel visibilities `V = X·Xᴴ` at ingress with a tensor-core GEMM, then runs a small batched cuFFT at 20 Hz to image the integrated visibilities at spatial Nyquist. It takes in a 400 GbE F-engine stream at ~98% of line rate. The NIC capture/transmit runs on [NVIDIA DAQIRI](https://github.com/NVIDIA/daqiri), which moves raw Ethernet packets between the ConnectX-7 and the GPU (ibverbs/DPDK engines, GPUDirect, flow steering); everything here links `libdaqiri` and runs inside the `daqiri:local` container.
 
-The NIC capture/transmit runs on [NVIDIA DAQIRI](https://github.com/NVIDIA/daqiri), which moves raw Ethernet packets between the ConnectX-7 and the GPU (ibverbs/DPDK engines, GPUDirect, flow steering). Everything here links `libdaqiri` and runs inside the `daqiri:local` container.
+We include a small simulated packet generator (`src/tx_fp8_host.cu`) representing a 16×16-element array observing an analytic sky — a star at field center plus an orbiting planet (the image above). It's a test signal source from a connected host with a GPU, but in principle could be an FPGA. The array is filled and Nyquist-sampled, so one cuFFT of the visibilities forms the full grid of beams across the field of view, imaged as a 128-frequency-channel 32×32 cube.
 
 ## Hardware
 
