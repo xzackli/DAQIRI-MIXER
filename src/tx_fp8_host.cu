@@ -44,7 +44,7 @@ __global__ void k_sky(uint8_t* __restrict__ sky, float l, float m){
     uint8_t* pay = sky + (size_t)a*MIXER_PAYLOAD_BYTES;
     if (c < MIXER_NCH/2){                              /* 128 active channels */
         int px = a & 15, qy = a >> 4;
-        float Apl = 0.82f * Astar * sqrtf(2.0f*(float)c/(float)(MIXER_NCH-1));  /* planet ~50% of star */
+        float Apl = 0.71f * Astar * sqrtf(2.0f*(float)c/(float)(MIXER_NCH-1));  /* planet ~30% of star */
         float phi = (float)M_PI * (px*l + qy*m);
         uint8_t rb = __nv_fp8_e4m3(Astar + Apl*cosf(phi)).__x;
         uint8_t ib = __nv_fp8_e4m3(Apl*sinf(phi)).__x;
@@ -78,7 +78,7 @@ static volatile std::sig_atomic_t g_stop=0; static void on_sig(int){g_stop=1;}
 int main(int argc,char**argv){
     if(argc<2){fprintf(stderr,"usage: %s <yaml> [--seconds N][--rho R][--torbit S][--device D][--eth-dst MAC][--nbufs N][--batch N][--refresh-hz F]\n",argv[0]);return 1;}
     const char* yaml=argv[1]; int seconds=0, device=0, nbufs=16384, batch=1024, refbudget=96; float refhz=8.f;
-    float rho=0.35f, torbit=3.0f; std::string eth_dst=MIXER_DEF_ETH_DST;
+    float rho=0.525f, torbit=3.0f; std::string eth_dst=MIXER_DEF_ETH_DST;
     for(int i=2;i<argc;++i){std::string a=argv[i];
         if(a=="--seconds"&&i+1<argc)seconds=atoi(argv[++i]);
         else if(a=="--rho"&&i+1<argc)rho=atof(argv[++i]); else if(a=="--device"&&i+1<argc)device=atoi(argv[++i]);

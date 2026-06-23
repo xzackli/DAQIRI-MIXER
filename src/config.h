@@ -5,7 +5,7 @@
  * *transport* side — what DAQIRI needs to capture/route packets (buffer sizes, seq bit_offset,
  * packets_per_batch, flow steering). A few values appear in both (seq at bit 384, the 8256 B heap,
  * 256 packets/batch); keep them in sync — change one here and change the matching field in
- * tx_beamform.yaml / rx_beamform_host.yaml.
+ * tx_host.yaml / rx_beamform_host.yaml.
  *
  * Packet (raw UDP, 8256 B jumbo on the wire — a CASPER-style heap):
  *   bytes   0..41   eth(14) + ip(20) + udp(8)  — eth_src filled by NIC offload

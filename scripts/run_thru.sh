@@ -4,7 +4,7 @@
 # receive rate + RX imissed to show the datapath + correlator sustain line rate. The single-GPU
 # GPUDirect TX (tx_fp8) caps ~145 G, which is why throughput uses this host-memory firehose.
 # Pass --noflop as arg 4 to measure the pure datapath (no GEMM/FFT). For the correct star+planet
-# image, use scripts/run_tx.sh instead.
+# image, use scripts/run_tx_host.sh instead.
 #   usage: run_thru.sh [label] [target-gbps|0=max] [secs] [rx-extra-flags]
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; IMG="${DAQIRI_IMG:-daqiri:local}"

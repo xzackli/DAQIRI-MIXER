@@ -1,6 +1,5 @@
 # Compiled binaries (scripts/build.sh writes these to the repo root)
 /rx_host_corr
-/tx_fp8
 /tx_fp8_host
 /peek32
 
