@@ -1,7 +1,7 @@
 /* rx_host_corr.cu -- realtime int8 tensor-core COVARIANCE CORRELATOR fed by a 400 GbE
  * F-engine stream. Per frequency channel: V = X*X^H (cgemm.cuh), integrated, then imaged.
  *  drain thread: thin host-bounce RX (hand snapshot ptrs, no per-pkt copy) -> GPU thread H2D corner-turn.
- *  pack: fp8 wire -> int8 X and conj(X), BOTH [ch][ant][klocal] (B read col-major = conj(X)^T, free transpose).
+ *  pack: int8 wire -> int8 X and conj(X), BOTH [ch][ant][klocal] (B read col-major = conj(X)^T, free transpose).
  *  compute: cgemm_blk_t<true> accumulates V += X*X^H into a persistent int32 cube; k_flush_cube drains it
  *    to a float cube every --flush updates (no separate accumulate pass, no per-batch V buffer).
  *  science output: the integrated visibility cube g_Vcube -- the real product; --dump <path> writes it to disk ~1/s.
@@ -10,7 +10,6 @@
  * Build: nvcc -arch=<sm_XX> rx_host_corr.cu -lcufft + DAQIRI libs; standard nvcuda::wmma tensor cores (cgemm.cuh).
  * Verified: star+orbiting planet, per-channel slope==c/127; ~380 G = ~98% line rate, 0-drop <~90%. */
 #include <cuda_runtime.h>
-#include <cuda_fp8.h>
 #include <cufft.h>
 #include "cgemm.cuh"
 #include <fcntl.h>
@@ -34,7 +33,7 @@
 #include <daqiri/daqiri.h>
 #include "config.h"
 #define CK(x) do{cudaError_t e_=(x);if(e_){fprintf(stderr,"CUDA %s:%d:%s\n",__FILE__,__LINE__,cudaGetErrorString(e_));std::exit(1);}}while(0)
-#define NB        (MIXER_NCH*MIXER_TPKT)           /* 8192 wire bytes per heap (planar fp8 re|im) */
+#define NB        (MIXER_NCH*MIXER_TPKT)           /* 8192 wire bytes per heap (planar int8 re|im) */
 #define SAMP_PER_HEAP (NB/2)                  /* 4096 complex samples per antenna heap */
 #define NCUBE     128                         /* frequency channels (= the per-channel V planes) */
 #define HBATCH    32                          /* heaps per V-update */
@@ -51,11 +50,10 @@
 #define MR_BYTES  ((size_t)MR_NBUFS*MR_ELEM_STRIDE)
 #define NG        32
 #define VCH       (2*MN)                      /* floats per channel visibility (planar re|im, 256x256) */
-#define SCALE     25.0f                       /* fp8 X (|X|<~5) -> int8 [-127,127] (lower if planet flat-tops) */
 static_assert(SAMP_PER_HEAP/MIXER_TPKT==NCUBE, "wire channels (SAMP_PER_HEAP/MIXER_TPKT) must equal NCUBE");
 static_assert(HBATCH*MIXER_TPKT==KPCH, "KPCH must equal HBATCH*MIXER_TPKT");
 
-/* pack: planar fp8 bb[heap][ant][re[SAMP]|im[SAMP]] -> int8 A=X and B=conj(X), BOTH [ch][ant][klocal]
+/* pack: planar int8 bb[heap][ant][re[SAMP]|im[SAMP]] -> int8 A=X and B=conj(X), BOTH [ch][ant][klocal]
  * (row-major, ld=KPCH). cgemm reads B column-major, so this same layout IS conj(X)^T -- the transpose
  * is free and A/B share one coalesced index (no scattered transpose write). One thread per (ant, global
  * sample); the frequency channel IS the split-K slot c=sl/MIXER_TPKT, klocal=heap*MIXER_TPKT+t spans the KPCH
@@ -66,9 +64,8 @@ __global__ void k_packAB(const uint8_t* __restrict__ bb, MixerI8* __restrict__ A
     int ant=i/TOTAL_SAMP; size_t s=i%TOTAL_SAMP;            /* global sample [0,TOTAL_SAMP) */
     int heap=s/SAMP_PER_HEAP, sl=s%SAMP_PER_HEAP, c=sl/MIXER_TPKT, t=sl%MIXER_TPKT, klocal=heap*MIXER_TPKT+t;
     size_t hb=(size_t)heap*MIXER_NANT*NB+(size_t)ant*NB;
-    __nv_fp8_e4m3 fr,fi; fr.__x=__ldg(&bb[hb+sl]); fi.__x=__ldg(&bb[hb+SAMP_PER_HEAP+sl]);
-    int qr=__float2int_rn((float)fr*SCALE), qi=__float2int_rn((float)fi*SCALE);
-    MixerI8 re=(MixerI8)(qr<-127?-127:(qr>127?127:qr)), im=(MixerI8)(qi<-127?-127:(qi>127?127:qi));
+    MixerI8 re=(MixerI8)(int8_t)__ldg(&bb[hb+sl]);                 /* int8 wire: read directly (raw byte, no decode) */
+    MixerI8 im=(MixerI8)(int8_t)__ldg(&bb[hb+SAMP_PER_HEAP+sl]);
     size_t a=(size_t)c*MM*KPCH+(size_t)ant*KPCH+klocal;     /* A=X, B=conj(X): [ch][ant][klocal], shared index */
     Are[a]=re; Aim[a]=im;                                   /* A = X         */
     Bre[a]=re; Bim[a]=(MixerI8)(-im);                          /* B = conj(X)   (read col-major -> conj(X)^T) */
@@ -207,7 +204,7 @@ int main(int argc,char**argv){
     CK(cudaMalloc(&g_Img,(size_t)NCUBE*NG*NG*sizeof(cufftComplex)));
     cufftHandle plan; int nfft[2]={NG,NG};         /* one batched plan: NCUBE transforms of NGxNG */
     cufftPlanMany(&plan,2,nfft,NULL,1,NG*NG,NULL,1,NG*NG,CUFFT_C2C,NCUBE); cufftSetStream(plan,pub);
-    fprintf(stderr,"[corr] THIN-DRAIN RX -> fp8 SPECTRAL CORRELATOR -> %d-channel cube of %dx%d alias-free images (HBATCH=%d) dev %d @ %.0f Hz, shm %s\n",NCUBE,NG,NG,(int)HBATCH,g_device,fps,CORR_SHM);
+    fprintf(stderr,"[corr] THIN-DRAIN RX -> int8 SPECTRAL CORRELATOR -> %d-channel cube of %dx%d alias-free images (HBATCH=%d) dev %d @ %.0f Hz, shm %s\n",NCUBE,NG,NG,(int)HBATCH,g_device,fps,CORR_SHM);
     std::thread gpu(gpu_thread), drain(drain_thread);
     cufftComplex* h=(cufftComplex*)malloc((size_t)NCUBE*NG*NG*sizeof(cufftComplex));
     float* hVcube=nullptr; FILE* dumpf=nullptr;     /* --dump: persist the integrated V cube (the science product) to disk ~1/s */

@@ -1,6 +1,6 @@
 /* config.h — the packet wire contract as compile-time constants. These #defines are what the
  * tx / rx CUDA code compiles against: the kernels need the seq offset, the [channel][time]
- * payload layout, NANT/NCH/TPKT, and the int4 packing at compile time to build headers and index
+ * payload layout, NANT/NCH/TPKT, and the int8 packing at compile time to build headers and index
  * the corner-turn (you can't #include a YAML). The DAQIRI YAMLs hold the same contract for the
  * *transport* side — what DAQIRI needs to capture/route packets (buffer sizes, seq bit_offset,
  * packets_per_batch, flow steering). A few values appear in both (seq at bit 384, the 8256 B heap,
@@ -12,10 +12,11 @@
  *   bytes  42..47   reserved (zero)
  *   bytes  48..51   seq (uint32, big-endian)    <- SEQ_BIT_OFFSET 384, width 32
  *   bytes  52..63   reserved (zero)
- *   bytes 64..8255  payload: 256 ch x 32 time int4 4+4 complex samples,
- *                   laid out [channel][time] (byte index = c*T_pkt + t)
+ *   bytes 64..8255  payload: 128 active ch x 32 time, int8 complex (8b re + 8b im),
+ *                   PLANAR: re[4096] then im[4096]; plane index = c*T_pkt + t
+ *                   (int8 matches the CASPER FPGA wire; was fp8 e4m3 before 2026-06-24)
  *
- * One packet = one antenna's [256 ch x 32 time] heap.  seq = global packet
+ * One packet = one antenna's [128 ch x 32 time] int8-complex heap.  seq = global packet
  * counter; antenna = seq % NANT.  The reorder groups 256 consecutive seq into a
  * batch (one full 256-antenna heap = 32 time-snapshots), slot = seq % PPB =
  * antenna.  Big packets keep pps sane at line rate (real F-engine behaviour);

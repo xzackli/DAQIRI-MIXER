@@ -6,7 +6,7 @@
 
 A 400-GbE-capable real-time int8 tensor-core covariance correlator on a single GPU. It computes per-channel visibilities `V = X·Xᴴ` at ingress with a tensor-core GEMM, then runs a small batched cuFFT at 20 Hz to image the integrated visibilities at spatial Nyquist. It runs end-to-end at ~380 GbE — ~95% of the 400 GbE line rate — with zero loss. The NIC capture/transmit runs on [NVIDIA DAQIRI](https://github.com/NVIDIA/daqiri), which moves raw Ethernet packets between the ConnectX-7 and the GPU (ibverbs/DPDK engines, GPUDirect, flow steering); everything here links `libdaqiri` and runs inside the `daqiri:local` container.
 
-We include a small simulated packet generator (`src/tx_fp8_host.cu`) simulating a 16×16-element array observing an analytic sky — a star and an orbiting planet (the image above). It's a test signal source from a connected host, but in principle could be a CPU or an FPGA. The array is filled and Nyquist-sampled, so one cuFFT of the visibilities forms the full grid of beams across the field of view, imaged as a 128-frequency-channel 32×32 cube.
+We include a small simulated packet generator (`src/tx_host.cu`) simulating a 16×16-element array observing an analytic sky — a star and an orbiting planet (the image above). It's a test signal source from a connected host, but in principle could be a CPU or an FPGA. The array is filled and Nyquist-sampled, so one cuFFT of the visibilities forms the full grid of beams across the field of view, imaged as a 128-frequency-channel 32×32 cube.
 
 ## Hardware
 
@@ -23,7 +23,7 @@ This was developed and tested with two hosts connected with a pair of 400 GbE NV
 Build on both hosts, then run the correlator on the receiver and the signal source on the transmitter:
 
 ```bash
-bash scripts/build.sh    # rx_host_corr + peek32 + tx_fp8_host (host-memory sky, line rate)
+bash scripts/build.sh    # rx_host_corr + peek32 + tx_host (host-memory sky, line rate)
 bash scripts/run_rx.sh   # receiver:    correlator -> /dev/shm/corr32
 bash scripts/run_tx_host.sh  # transmitter: analytic sky at line rate (~380 GbE, host memory)
 ./peek32 120             # view a channel of the image cube (120 = high freq, bright planet)

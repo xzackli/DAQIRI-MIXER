@@ -1,6 +1,6 @@
 # Compiled binaries (scripts/build.sh writes these to the repo root)
 /rx_host_corr
-/tx_fp8_host
+/tx_host
 /peek32
 
 # CUDA / profiler output

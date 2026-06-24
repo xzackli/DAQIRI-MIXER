@@ -1,9 +1,9 @@
-/* tx_fp8_host.cu — HOST-memory analytic-sky TX: stream the star + orbiting-planet sky at LINE RATE (~380 GbE).
+/* tx_host.cu — HOST-memory analytic-sky TX: stream the star + orbiting-planet sky at LINE RATE (~380 GbE).
  *
  * Why host memory + pre-fill: writing packets straight from GPU VRAM (GPUDirect) is capped ~145 G by the
  * A6000's PCIe P2P read bandwidth, and filling each packet's payload on the CPU is memcpy-bound ~50 G --
  * neither reaches 400. But the sky varies slowly (orbit ~seconds) vs the line rate, so we PRE-FILL each host
- * TX buffer ONCE on first touch (64 B header + seq @ byte 48 + the antenna's fp8 sky), and the steady-state
+ * TX buffer ONCE on first touch (64 B header + seq @ byte 48 + the antenna's int8 sky), and the steady-state
  * loop then just submits bursts with no per-packet writes -- the NIC streams the pre-filled sky from host
  * hugepages at line rate. When the planet moves only stale payloads are rewritten, STAGGERED a few per burst
  * (--refresh-budget) so the refresh never stalls the send. (The RX needs none of this -- its MR is a NIC
@@ -15,7 +15,6 @@
  * (num_bufs=16384) is required -- at line rate the NIC has more packets in flight than a shallow pool holds,
  * so reusing a buffer the NIC hasn't sent yet tears packets. Build: nvcc -arch=<sm_XX>. */
 #include <cuda_runtime.h>
-#include <cuda_fp8.h>
 #include <arpa/inet.h>
 #include <linux/if_ether.h>
 #include <netinet/ip.h>
@@ -37,10 +36,10 @@
 
 #define CK(x) do{cudaError_t e_=(x);if(e_!=cudaSuccess){fprintf(stderr,"CUDA %s:%d: %s\n",__FILE__,__LINE__,cudaGetErrorString(e_));std::exit(1);}}while(0)
 
-/* generate the 256-antenna fp8 sky payload table for direction (l,m): payload[a] = re[4096]|im[4096],
- * re/im plane index sl = c*TPKT + t, channels c<128 active (Apl ~ sqrt(c)); matches tx_fp8 wire layout. */
+/* generate the 256-antenna int8 sky payload table for direction (l,m): payload[a] = re[4096]|im[4096],
+ * re/im plane index sl = c*TPKT + t, channels c<128 active (Apl ~ sqrt(c)); matches tx_int8 wire layout. */
 __global__ void k_sky(uint8_t* __restrict__ sky, float l, float m){
-    const float Astar=2.0f;                           /* star amplitude (fits fp8 headroom) */
+    const float Astar=2.0f;                           /* star amplitude (fits int8 headroom) */
     int a = blockIdx.x; int c = threadIdx.x;
     if (a >= MIXER_NANT) return;
     uint8_t* pay = sky + (size_t)a*MIXER_PAYLOAD_BYTES;
@@ -48,15 +47,19 @@ __global__ void k_sky(uint8_t* __restrict__ sky, float l, float m){
         int px = a & 15, qy = a >> 4;
         float Apl = 0.71f * Astar * sqrtf(2.0f*(float)c/(float)(MIXER_NCH-1));  /* planet ~30% of star */
         float phi = (float)M_PI * (px*l + qy*m);
-        uint8_t rb = __nv_fp8_e4m3(Astar + Apl*cosf(phi)).__x;
-        uint8_t ib = __nv_fp8_e4m3(Apl*sinf(phi)).__x;
+        /* int8 complex (8b re + 8b im), matching the CASPER FPGA wire. SCALE 25 maps |X|<~5 -> [-127,127];
+         * the RX now reads these int8 bytes directly (raw byte, no decode). */
+        int qr = __float2int_rn((Astar + Apl*cosf(phi)) * 25.0f);
+        int qi = __float2int_rn((Apl*sinf(phi)) * 25.0f);
+        uint8_t rb = (uint8_t)(int8_t)(qr<-127?-127:(qr>127?127:qr));
+        uint8_t ib = (uint8_t)(int8_t)(qi<-127?-127:(qi>127?127:qi));
         const int HALF = MIXER_PAYLOAD_BYTES/2;
         #pragma unroll
         for (int t=0;t<MIXER_TPKT;++t){ int sl=c*MIXER_TPKT+t; pay[sl]=rb; pay[HALF+sl]=ib; }
     }
 }
 
-/* ---- host eth/ip/udp header template (seq slot at byte 48), same wire as tx_fp8 ---- */
+/* ---- host eth/ip/udp header template (seq slot at byte 48), same wire as tx_int8 ---- */
 static bool parse_mac(const char* s, uint8_t mac[6]){
     return std::sscanf(s,"%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",&mac[0],&mac[1],&mac[2],&mac[3],&mac[4],&mac[5])==6; }
 static uint16_t ip_checksum(const void* data, size_t len){
