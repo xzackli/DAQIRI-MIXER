@@ -15,7 +15,7 @@ You need a CUDA GPU and a ConnectX 6 or later NIC. Change the `-arch` in `script
 This was developed and tested with two hosts connected with a pair of 400 GbE NVIDIA ConnectX-7.
 
 - **Receiver** — RTX 5070 (Blackwell); runs the correlator. GeForce can't GPUDirect, so we use host DRAM.
-- **Transmitter** — RTX A6000 (Ampere); streams the analytic-sky TX from host DRAM at line rate (no GPUDirect).
+- **Transmitter** — RTX A6000 (Ampere); streams the analytic-sky TX from host DRAM at line rate.
 
 
 ## Run
@@ -40,7 +40,7 @@ The live image is just a monitor. The science product is the integrated visibili
 The YAMLs are [DAQIRI](https://github.com/NVIDIA/daqiri) stream configs (the `daqiri.cfg` block).
 
 - **`rx_beamform_host.yaml`** — host-bounce capture on the receiver. Consumer GeForce GPUs can't GPUDirect, so in this example we bounce off host with `kind: "huge"` (host hugepages), with `engine: "ibverbs"` (MPRQ DevX), a single RX queue, and a flow rule steering `udp_dst: 4096` to it.
-- **`tx_host.yaml`** — the line-rate host TX (`run_tx_host.sh`): `kind: "huge"` (host hugepages, not GPUDirect), `num_bufs: 16384` (multiple of 256, deep enough for the in-flight TX window), `pacing_mbps: 380000` to cap at 380 G.
+- **`tx_host.yaml`** — the line-rate host TX (`run_tx_host.sh`): `kind: "huge"` (host hugepages), `num_bufs: 16384` (multiple of 256, deep enough for the in-flight TX window), `pacing_mbps: 380000` to cap at 380 G.
 
 Adjust these for your hardware: the NIC PCIe address (`0000:c7:00.0`), the `cpu_core`/`master_core` assignments, and `num_bufs`/`buf_size` (sized here for the 8256 B jumbo heap).
 
