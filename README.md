@@ -31,7 +31,7 @@ bash scripts/run_tx_host.sh  # transmitter: generate synthetic packets (~380 GbE
 
 You might need to prevent idling on GPUs with `bash scripts/pin-clocks.sh on` (and `off` after).
 
-`run_tx_host.sh` streams the analytic sky from **host memory at line rate (~380 GbE)** into the `run_rx.sh` correlator (`imissed=0`) — a correct star + orbiting planet imaged end-to-end at the link rate, with **no GPUDirect anywhere** (host DRAM on both sides), paced at 380 G via `pacing_mbps` in `tx_host.yaml`.
+`run_tx_host.sh` streams the analytic sky from **host memory at line rate (~380 GbE)** into the `run_rx.sh` correlator (`imissed=0`) — a correct star + orbiting planet imaged end-to-end at the link rate (host DRAM on both sides), paced at 380 G via `pacing_mbps` in `tx_host.yaml`.
 
 The live image is just a monitor. The science product is the integrated visibility cube `V` — a real deployment writes that to disk (`bash scripts/run_rx.sh --dump /data/v.f32`) and images offline. `--flush N` trades live-view smoothness (low, default 4) against peak throughput (raise it).
 
