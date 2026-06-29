@@ -1,26 +1,18 @@
-# Compiled binaries (scripts/build.sh writes these to the repo root)
+# compiled binaries (no extension)
+/rx_ula_corr
+/rx_ula_corr_sm86
+/tx_ula
+/ula_selftest
+/peek_ula
+/capture_dump
+/feng100
+# backups
+*.planar.bak
+*.bak
+*.o
+/peek32
 /rx_host_corr
 /tx_host
-/peek32
-
-# CUDA / profiler output
-*.o
-*.ptx
-*.cubin
-*.nsys-rep
-*.qdrep
-*.sqlite
-*.ncu-rep
-
-# Logs / runtime scratch
-*.log
-
-# Visibility-cube dumps (--dump output)
-*.f32
-
-# Editor / OS junk
-*~
-*.swp
-.vscode/
-.idea/
-.DS_Store
+/rx_ula_corr_*
+__pycache__/
+*.pyc
