@@ -96,3 +96,26 @@ CANDIDATE 1 = MUX POST-GEARBOX (the ata_snap/LFAA "select at the framing stage" 
     byte-identical. ready_to_rebuild=TRUE.
   - REMAINING: rebuild .fpg (in progress) -> program -> test_mode ramp capture + boundary_verify.py,
     target 0/1495 boundaries skewed. The phase-pin "advance-9" idea is DROPPED (knife-edge).
+
+## SKEW FIXED + HW-PROVEN (2026-06-29 ~09:40) — manas2el_2026-06-29_0904.fpg
+Post-gearbox-mux build: WNS +0.137ns (timing MET despite gearbox B), JASPER_DONE_OK. Programmed
+(daemon restarted for a clean one-program session) + test_mode ramp capture + boundary decode:
+- **boundary failures: 0** (was 1495/1495). elem0.last=Ramp / elem1.first=Zero at every boundary.
+- Raw dump: element0 packets = FULL RAMP from payload byte 0 (firstNZ@0, nNZ=8183) [was firstNZ@72];
+  element1 packets = PURE ZERO (nNZ=0) [was nNZ=71 of leaked ramp]. The 72-byte skew is GONE.
+- The decoder's (a)/(b) alternation/seq "fail" is a CAPTURE artifact only: dumpcap dropped 686/2186
+  in software at 278k pps; the NIC rx_discards=0, the board stream is clean.
+The canonical post-gearbox mux (twin LOCKSTEP gearboxes + output elem mux, co-timed with gb_eofand)
+is the proven fix — derived from 6 reference designs, sim-proven 0/offset-independent, HW-proven 0/1495.
+The phase-pin "advance-9" idea stays dropped (knife-edge). 2-element F-engine framing is now CORRECT.
+
+## NEXT (GPU end-to-end, orthogonal to the skew fix — found by the verify-more pass)
+Before the real FPGA stream images correctly on the GPU, two GPU-side fixes (rx_ula_corr/config_ula):
+1. (blocking) channel/time TRANSPOSE: k_corr4 reads channel-major (sl=c*TPKT+t) but the FPGA emits
+   TIME-major (sl=t*NCHAN+c, all 256 ch of spectrum0 then spectrum1...). The loopback hides it (tx +
+   selftest share the same wrong order + CW source). Fix k_corr4 + tx_ula + ula_selftest to time-major;
+   CONFIRM the direction against a real wire capture (test_mode ramp can't show channel/time order).
+2. (blocking for 2-el) ULA_NELEM=4 -> set 2 for manas2el (rx requires seen==NELEM or rejects snapshot).
+   One-line; NELEM is cleanly parameterized.
+3. (minor, ok) a dropped packet costs a lost snapshot not a corrupted one (byte-52 keying = no antenna
+   identity rotation). No fix needed.
