@@ -119,3 +119,19 @@ Before the real FPGA stream images correctly on the GPU, two GPU-side fixes (rx_
    One-line; NELEM is cleanly parameterized.
 3. (minor, ok) a dropped packet costs a lost snapshot not a corrupted one (byte-52 keying = no antenna
    identity rotation). No fix needed.
+
+## REALIZATION REVIEW vs 6 proven designs (2026-06-29) — 2-el FINE, 4-el should change structure
+A read-only comparison of our twin-lockstep-gearbox to ata_snap/LFAA/CHIME/CASPER-reorder/packetizer:
+- **2 ELEMENTS (manas2el, HW-proven): twin-lockstep-gearbox is canonical-adjacent + correct — SHIP IT.**
+  It matches the CASPER "replicated datapath + shared control" idiom, makes select+boundary co-timed in
+  the output domain (the genuine fix), and at N=2 the lockstep audit + 2:1 mux are cheap + already validated.
+- **4-ELEMENT ULA: switch to single-gearbox + element-as-read-order-TAG (the ata_snap/LFAA pattern), NOT
+  4x replication.** Replicating to 4 gearboxes + a 4:1 512b output mux scales area linearly (~6.4k FF/2k LUT),
+  tightens the timing arc (4x fan-in vs our tight WNS), and creates a 4-WAY lockstep invariant that any future
+  datapath edit can silently break -> reintroducing this exact skew class. The 3 closest proven designs
+  (ata_snap feng_id header-BRAM addressed by a block counter; LFAA tUSER->SPEAD header; CHIME header +
+  channel-selector tables) all carry element identity as a TAG on ONE width-converted stream and multiplex
+  elements by READ-ORDERING ahead of the single gearbox -- which keeps select+boundary co-timed for free
+  (the same property our output-mux achieves) with no replicated datapath. Our elem@52 field is already the
+  right tag; the 4-el change is to source it from the interleaved read-order rather than a parallel-gearbox select.
+  => path to the full 4-element ULA: single gearbox, interleave the 4 elements' reads, carry elem as the read-order tag.
