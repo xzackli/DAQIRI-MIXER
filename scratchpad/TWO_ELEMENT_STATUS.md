@@ -135,3 +135,17 @@ A read-only comparison of our twin-lockstep-gearbox to ata_snap/LFAA/CHIME/CASPE
   (the same property our output-mux achieves) with no replicated datapath. Our elem@52 field is already the
   right tag; the 4-el change is to source it from the interleaved read-order rather than a parallel-gearbox select.
   => path to the full 4-element ULA: single gearbox, interleave the 4 elements' reads, carry elem as the read-order tag.
+
+## BYTE-ORDER ASYMMETRY found + FIXED (2026-06-29 ~10:00) — the verify-more catch
+The independent re-verify (then a definitive XML trace) found the post-gearbox-mux clone matched LATENCY
+but NOT the data TRANSFORM: gearbox A applies a 32-bit HALF-SWAP via Concat1(662) (Slice3=lower32->hi,
+Slice=upper32->lo => input [U:L]->output [L:U]) on its data, but gearbox B (the clone, data_delay1b->midb->
+Delay4b = 3 plain delays) did NOT -> element0 words half-swapped, element1 not -> the GPU would corrupt one
+element. INVISIBLE to boundary_verify (element1 is zero in test_mode). [Corrects the old memory note that
+called Concat1 the "seq/header concat" -- it is a DATA half-swap; Mux3(604) is the seq-insertion mux with
+data passing through d1.] FIX (gated plan->verify->modify->verify, A untouched): added Slice3b(804)/Sliceb(805)/
+Concat1b(806) cloning A exactly, spliced data_delay1b->[Slice/Concat half-swap]->midb->Delay4b (combinational,
+0 latency, B stays 3 registers == A). verify-modify confirmed B byte-identical to A by construction. Both
+elements now share byte order, matching the manas256f convention. Rebuilding -> re-capture (no-regression:
+boundary stays 0/1495 + clean stream; byte-order symmetry is guaranteed structurally since element1=zero can't
+be wire-captured in test_mode).
