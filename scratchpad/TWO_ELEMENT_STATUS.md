@@ -149,3 +149,14 @@ Concat1b(806) cloning A exactly, spliced data_delay1b->[Slice/Concat half-swap]-
 elements now share byte order, matching the manas256f convention. Rebuilding -> re-capture (no-regression:
 boundary stays 0/1495 + clean stream; byte-order symmetry is guaranteed structurally since element1=zero can't
 be wire-captured in test_mode).
+
+## ✅ 2-ELEMENT FPGA F-ENGINE COMPLETE (2026-06-29 ~10:50) — manas2el_2026-06-29_1014.fpg
+Byte-order-fixed build: WNS +0.262ns (the half-swap is combinational, no timing cost), JASPER_DONE_OK.
+HW re-capture (no-regression): boundary failures 0/1492, element0=full ramp from byte0, element1=zero,
+ADC0+ADC2 locked, 278k pps clean. Byte-order symmetry guaranteed structurally (gearbox B byte-identical to A
+by construction; element1=zero can't be wire-captured in test_mode). ALL FOUR green:
+  build (timing +0.262ns) | stream (jumbo, 0 discards) | MTS (equal latency 104) | framing (0/1492 + A==B byte order)
+The 2-element F-engine is DONE on the FPGA side. NEXT = GPU end-to-end (transpose to time-major + ULA_NELEM=2;
+confirm transpose direction vs a real capture), then the 4-element ULA via single-gearbox + read-order tag.
+Bench-only remaining: coherent-tone MTS phase-stability (split CW to SMAs) + a real-signal 2-element capture
+to positively confirm element0/element1 byte-order symmetry on the wire.
