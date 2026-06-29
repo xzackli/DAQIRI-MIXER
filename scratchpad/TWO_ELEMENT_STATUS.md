@@ -36,3 +36,31 @@ test_mode=1 ramp capture + boundary decode (the manas256d-class gate):
 Scripts: scripts/fpga_bringup/{bringup_2el,boundary_verify,mts_bringup,mts_verify}.py;
 overnight: ~/prog_2el.py, ~/bringup_tm.py, /tmp/skew.py (the decode).
 manas256f/manas256 untouched fallbacks.
+
+## SKEW FIX — diagnosis REFINED + verified-direction (gated plan->verify, 2026-06-29 ~07:00)
+Two gated plan->verify passes nailed the fix DIRECTION (a wrong one was caught before any rebuild):
+- The skew = the gearbox OUTPUT pipeline: rd_sel_mux.sel = elemctr (toggles on gb_eofand = OUTPUT
+  eof at gb_wctr==128), but the selected DPRAM data traverses gb_cat512(8 collect)+gb_pipe512(+1)
+  = 9 read-words before output. So the input-side mux switches 9 read-words too LATE vs the output
+  packet boundary. A cycle-accurate read-clock sim confirms: baseline 9 mismatch/boundary (=72B,
+  matches HW 1495/1495); ADVANCE-select-by-9 -> 0 mismatch; delay-by-9 -> 18 (worse); advance-by-8
+  -> 1 residual (the +1 = the gb_pipe512 dense-word quantum). 9 read-words = 1 dense-word(8) + 1.
+- WRONG approach caught by verify: driving a new select counter's enable from rd_eofdly (= gb_eofand
+  DELAYED 1) DELAYS the select by +1 (makes skew ~10), does NOT advance. rd_eofdly is structurally
+  incapable of a 9-word advance. (The 'delay ~9' note in the earlier memo had the sign loose.)
+- CORRECT fix (advance the rd_sel_mux DATA-select by 9 read-words; KEEP elem@52/seq header as-is):
+  the select must toggle 9 read-words BEFORE the elemctr/output-eof. Cleanest realizations:
+  (B1) a dedicated early-toggle pulse anchored at read-word 1015 (=1024-9) within the readout window
+       (the select counter enabled by that pulse) -- phase-pin the exact read-word via a Gateway-out
+       probe / the cycle-sim when the model is open (NOT rd_eofdly).
+  (B2-fixed) co-align by construction: carry the element tag for the HEADER through the SAME
+       gb_pipe512 pipeline as the data so they emerge together -- but note a packet has ONE elem@52,
+       so this only helps if framed as advancing the select; the DATA-select advance is the real fix.
+  Control-net/1-bit-select ONLY; anchor (DPRAM explicit_period), Counter5/Counter3 widths,
+  channelizer, seqctr all untouched. Low design risk; the ONLY uncertainty is the exact sub-dense
+  phase, best pinned interactively (program/capture/adjust) since sim-vs-HW phase may differ by 1.
+- STATUS: fix DIRECTION verified (advance-by-9). Exact phase-pin = the last step (1 short edit + a
+  rebuild, possibly one phase-trim iteration). Left for an interactive pass rather than blind
+  overnight rebuild-looping on a 1-read-word phase. manas2el streams correctly TODAY except this
+  72-byte boundary displacement; manas256f/manas256 untouched fallbacks; the test_mode gate + decode
+  (boundary_verify.py) is the ready, proven check for the fixed build (target 0/1495).
