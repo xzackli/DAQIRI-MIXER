@@ -64,3 +64,15 @@ Two gated plan->verify passes nailed the fix DIRECTION (a wrong one was caught b
   overnight rebuild-looping on a 1-read-word phase. manas2el streams correctly TODAY except this
   72-byte boundary displacement; manas256f/manas256 untouched fallbacks; the test_mode gate + decode
   (boundary_verify.py) is the ready, proven check for the fixed build (target 0/1495).
+
+## MTS PROVEN ON HARDWARE — first-ever run_mts, tiles 224+226 ALIGNED (2026-06-29 ~07:30)
+No-FPGA-reprogram MTS run on the programmed manas2el (rfdc.init with the 8MHz-SYSREF LMK +512M LMX
+upload, then run_mts): **run_mts -> True; ADC0 Latency(T1)=104, ADC2 Latency(T1)=104 = EQUAL** (Offset
+0, Marker_Delay 15 both). This is the deterministic-alignment success criterion. CONFIRMS in one shot:
+- the t224/t226 enable_mts gateware is correct (no 0x200 NOT_ENABLED);
+- the 8MHz SYSREF (LMK rfsoc4x2_lmk_..._PL_128M...; SYSREF_DIV=320 -> 8.000MHz) is legal (no 0x800/0x1000);
+- the PG269/ALPACA AXIS-clock-from-PL topology IS valid for MTS on the stock rfsoc4x2 (the net named
+  adc_clk = the pl_clk MMCM output) -> the whole AXIS-clock investigation conclusion is HW-confirmed.
+ADC0/ADC2 State 15/PLL1 after the 8MHz init; ADC1/ADC3 State 12 (not in the 0b0101 group, expected).
+STILL PENDING (bench): the coherent-tone fftconvolve argmax==0 phase-stability proof (needs a split CW
+tone to the SMAs) + repeatability across reprograms; run_mts alignment itself is now PROVEN. Script: ~/mts_run.py.
