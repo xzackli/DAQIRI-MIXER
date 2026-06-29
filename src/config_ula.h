@@ -1,24 +1,38 @@
-/* config_ula.h — wire + geometry contract for the 4-element UNIFORM LINEAR ARRAY (ULA) demo.
+/* config_ula.h — wire + geometry contract for the UNIFORM LINEAR ARRAY (ULA) demo.
  *
  * This is the GPU X-engine's input contract: CHANNELIZED data, exactly what the F-engine
- * (FPGA PFB+FFT on the board — CASPER tut_spec style — the decided architecture) emits. The synthetic TX
- * (tx_ula.cu) bakes this directly to stand in for the F-engine; the RX (rx_ula_corr.cu)
- * correlates 4x4 per channel and beamforms to a 1-D angular response.
+ * (FPGA PFB+FFT on the manas2el 4x2 build) emits. The synthetic TX (tx_ula.cu) bakes this
+ * BYTE-IDENTICALLY to stand in for the F-engine; the RX (rx_ula_corr.cu) inverts the wire
+ * mapping, correlates NELEMxNELEM per channel, and beamforms to a 1-D angular response.
  *
- * Transport wire is kept identical to the proven MIXER host-bounce path (seq@48 BE u32,
- * 64 B header, 8256 B jumbo heap) so we reuse the working DAQIRI yamls + drain plumbing.
- * Only the array shrinks: NELEM=4 (was 256), one packet = one element's [NCHAN x TPKT]
- * int8-complex heap, INTERLEAVED (re,im) per complex sample -- the RFSoC F-engine's natural
- * on-wire format (re,im adjacent bytes per channel). Sample index sl = c*TPKT + t; the complex
- * sample at sl is two adjacent payload bytes: re at byte 2*sl, im at byte 2*sl+1. seq = global
- * packet counter; element = seq % NELEM; PPB = NELEM consecutive packets = one full array snapshot.
+ * Transport wire (seq@48 BE u32, 64 B header, 8256 B jumbo heap) matches the proven MIXER
+ * host-bounce path so we reuse the working DAQIRI yamls + drain plumbing.
  *
- * Board mapping (later): when the real 4x2 feeds this, its raw wire is seq@42 / payload@106;
- * that remap (and FPGA-vs-GPU PFB) is an integration-time concern, not baked here. */
+ * ====================================================================================
+ * REAL FPGA WIRE LAYOUT (reverse-engineered + VERIFIED from a hardware test_mode ramp
+ * capture: digilab-transmit:/tmp/m2el_bo.pcapng, 2026-06-29). Ground truth — TX must
+ * EMIT this; RX must INVERT it.
+ *   - Frame = 8256 B: 64 B header then 8192 B payload. One packet = ONE element.
+ *     seq = uint32 BIG-ENDIAN @ byte 48; element id (0/1) @ byte 52; payload @ byte 64.
+ *     Packets alternate element 0,1,0,1; element == seq%2, but ROUTE by byte52 (drop-immune).
+ *   - Payload = NCHAN x TPKT complex int8 (re@2*si, im@2*si+1), 2 B/sample, 4096 samples.
+ *   - MACRO ORDER = TIME-MAJOR (spectrum-major): production sample index i = t*NCHAN + c
+ *     (t=0..TPKT-1, c=0..NCHAN-1). All NCHAN channels of time 0 contiguous, then time 1, ...
+ *   - WITHIN-WORD HALF-SWAP: payload grouped into 8-byte words (= 4 consecutive production
+ *     samples = 4 consecutive channels at fixed t). Within each 8-byte word the two 4-byte
+ *     halves (2 samples each) are SWAPPED: production [s0,s1,s2,s3] -> wire [s2,s3,s0,s1].
+ *     This is the gearbox Concat1 32-bit half-swap; identical on both elements. The map is
+ *     its own inverse (+2 mod 4), so TX-emit and RX-invert use the SAME formula:
+ *         ULA_WIRE_SI(i) = 4*(i/4) + ((i%4)+2)%4
+ *         wire byte:  re @ 2*ULA_WIRE_SI(i),  im @ 2*ULA_WIRE_SI(i)+1
+ *     VERIFIED: applying ULA_WIRE_SI to the raw ramp payload yields a smooth +1 ramp in
+ *     production order i=t*NCHAN+c (2045/2047 increments are +1; the 2 breaks are test_mode
+ *     counter quirks, not layout). Confirmed byte-identical to the 8-byte-word half-swap.
+ * ==================================================================================== */
 #pragma once
 
-/* ---- array ---- */
-#define ULA_NELEM   4      /* elements in the line (the 4x2's 4 ADC inputs)            */
+/* ---- array (manas2el = 2-element F-engine build) ---- */
+#define ULA_NELEM   2      /* elements in the line (manas2el 4x2 build emits 2)        */
 #define ULA_DSPACE  0.5f   /* element spacing in wavelengths at band center (lambda/2) */
 
 /* ---- channelization (F-engine output the X-engine consumes) ---- */
@@ -26,7 +40,7 @@
 #define ULA_TPKT    16     /* time samples/ch/packet (16 keeps payload<=8192 at 256 ch) */
 #define ULA_FCEN_CH (ULA_NCHAN/2)  /* channel index taken as band center for d/lambda  */
 
-/* ---- payload / wire (interleaved int8 complex: per sample sl=c*TPKT+t, re@2*sl, im@2*sl+1) ---- */
+/* ---- payload / wire ---- */
 #define ULA_PAYLOAD_BYTES 8192   /* NCHAN*TPKT*2 = 256*16*2                            */
 #define ULA_HDR_BYTES     64     /* payload_byte_offset                               */
 #define ULA_WIRE_BYTES    8256   /* HDR + PAYLOAD (jumbo)                             */
@@ -36,6 +50,17 @@
 #define ULA_ELEM_BYTE     52     /* element/antenna index (uint8): drop-immune ID,    */
                                  /* keyed directly instead of seq%NELEM               */
 #define ULA_PPB           ULA_NELEM   /* packets per batch = one full array snapshot  */
+
+/* ---- REAL-LAYOUT mapping: ONE shared definition used by TX (emit) and RX (invert). ----
+ * Production sample index (TIME-MAJOR): i = t*NCHAN + c, t in [0,TPKT), c in [0,NCHAN).
+ * Wire sample index after the 8-byte-word half-swap (its own inverse):
+ *     ULA_WIRE_SI(i) = 4*(i/4) + ((i%4)+2)%4
+ * On the wire, production sample i lives at payload bytes:
+ *     re @ 2*ULA_WIRE_SI(i),  im @ 2*ULA_WIRE_SI(i)+1   (relative to payload start). */
+#define ULA_PROD_SI(t,c)  ((t)*ULA_NCHAN + (c))               /* time-major production index */
+#define ULA_WIRE_SI(i)    (4*((i)/4) + (((i)%4)+2)%4)         /* half-swap (self-inverse)    */
+#define ULA_WIRE_RE_OFF(i) (2*ULA_WIRE_SI(i))                 /* payload byte offset of re   */
+#define ULA_WIRE_IM_OFF(i) (2*ULA_WIRE_SI(i) + 1)             /* payload byte offset of im   */
 
 /* ---- beamforming (1-D angular response of the line) ---- */
 #define ULA_NBEAM   64     /* zero-padded 1-D FFT length -> NBEAM angular bins         */

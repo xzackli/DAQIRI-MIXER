@@ -25,8 +25,10 @@
 #define CK(x) do{cudaError_t e_=(x);if(e_!=cudaSuccess){fprintf(stderr,"CUDA %s:%d: %s\n",__FILE__,__LINE__,cudaGetErrorString(e_));std::exit(1);}}while(0)
 
 /* generate the NELEM-element channelized int8 table for sources at sin(theta) s1 (amp a1) + s2 (amp a2).
- * one block per element, threads = channels. sample index sl = c*TPKT + t; CW source -> constant over t.
- * INTERLEAVED on wire (F-engine format): re at payload byte 2*sl, im at byte 2*sl+1. */
+ * one block per element, threads = channels. CW source -> constant over t (the moving-source sweep is in
+ * gen(), driven per-timestep from the host). Emits BYTE-IDENTICAL to the REAL FPGA layout (config_ula.h):
+ * TIME-MAJOR production index i = ULA_PROD_SI(t,c), then the 8-byte-word HALF-SWAP, so re lands at payload
+ * byte ULA_WIRE_RE_OFF(i), im at ULA_WIRE_IM_OFF(i). RX inverts the same map. */
 __global__ void k_sky_ula(uint8_t* __restrict__ sky, float s1, float a1, float s2, float a2){
     int e=blockIdx.x, c=threadIdx.x; if(e>=ULA_NELEM||c>=ULA_NCHAN) return;
     uint8_t* pay = sky + (size_t)e*ULA_PAYLOAD_BYTES;
@@ -38,7 +40,7 @@ __global__ void k_sky_ula(uint8_t* __restrict__ sky, float s1, float a1, float s
     uint8_t rb=(uint8_t)(int8_t)(qr<-127?-127:(qr>127?127:qr));
     uint8_t ib=(uint8_t)(int8_t)(qi<-127?-127:(qi>127?127:qi));
     #pragma unroll
-    for(int t=0;t<ULA_TPKT;++t){ int sl=c*ULA_TPKT+t; pay[2*sl]=rb; pay[2*sl+1]=ib; }
+    for(int t=0;t<ULA_TPKT;++t){ int pi=ULA_PROD_SI(t,c); pay[ULA_WIRE_RE_OFF(pi)]=rb; pay[ULA_WIRE_IM_OFF(pi)]=ib; }
 }
 
 static bool parse_mac(const char* s, uint8_t mac[6]){
@@ -82,7 +84,8 @@ int main(int argc,char**argv){
 
     if(daqiri::daqiri_init(yaml)!=daqiri::Status::SUCCESS){fprintf(stderr,"daqiri_init failed\n");return 1;}
     const int port_id=daqiri::get_port_id(ULA_TX_IFACE); if(port_id<0){fprintf(stderr,"no TX iface %s\n",ULA_TX_IFACE);return 1;}
-    fprintf(stderr,"[tx_ula] 4-elem ULA -> %s udp %d: single source swept +-%.0fdeg over %.1fs, amp %.0f\n",
+    fprintf(stderr,"[tx_ula] %d-elem ULA -> %s udp %d: single source swept +-%.0fdeg over %.1fs, amp %.0f\n",
+            ULA_NELEM,
             eth_dst.c_str(),ULA_UDP_PORT,sweepdeg,tsweep,amp);
 
     const float w=2.0f*(float)M_PI/tsweep, srad=sweepdeg*(float)M_PI/180.f;

@@ -43,15 +43,19 @@ static_assert(NCHAN*TPKT==SAMP, "NCHAN*TPKT must equal SAMP_PER_HEAP");
 static_assert((NBEAM&(NBEAM-1))==0, "NBEAM must be power of two");
 
 /* V[ch][a][b] += sum_t X_a(t)*conj(X_b(t)) over this snapshot's TPKT samples.
- * bb = [NELEM][NB] (each heap INTERLEAVED int8: sample sl has re@2*sl, im@2*sl+1); sl = c*TPKT + t. */
+ * bb = [NELEM][NB], each heap = the RAW FPGA payload (config_ula.h REAL wire layout): TIME-MAJOR
+ * production index i = t*NCHAN + c, then the 8-byte-word HALF-SWAP. We INVERT the mapping on read so
+ * physical channel c / time t is correct: production i = ULA_PROD_SI(t,c); wire byte re @ ULA_WIRE_RE_OFF(i),
+ * im @ ULA_WIRE_IM_OFF(i). (The half-swap is consistent across elements, so it could be elided for the
+ * correlation alone, but we invert it so the CHANNEL axis is physically correct for the angle estimator.) */
 __global__ void k_corr4(const uint8_t* __restrict__ bb, float* __restrict__ Vre, float* __restrict__ Vim){
     int i=blockIdx.x*blockDim.x+threadIdx.x; if(i>=NCHAN*VN) return;
     int c=i/VN, ab=i%VN, a=ab/NELEM, b=ab%NELEM;
     const int8_t* A=(const int8_t*)bb+(size_t)a*NB; const int8_t* B=(const int8_t*)bb+(size_t)b*NB;
     float sre=0.f, sim=0.f;
     #pragma unroll
-    for(int t=0;t<TPKT;++t){ int sl=c*TPKT+t;
-        float ar=A[2*sl], ai=A[2*sl+1], br=B[2*sl], bi=B[2*sl+1];
+    for(int t=0;t<TPKT;++t){ int pi=ULA_PROD_SI(t,c); int ro=ULA_WIRE_RE_OFF(pi), io=ULA_WIRE_IM_OFF(pi);
+        float ar=A[ro], ai=A[io], br=B[ro], bi=B[io];
         sre+=ar*br+ai*bi; sim+=ai*br-ar*bi; }           /* X_a * conj(X_b) */
     Vre[i]+=sre; Vim[i]+=sim;
 }
@@ -106,8 +110,8 @@ int main(int argc,char**argv){
     float* h_img=(float*)malloc((size_t)NCHAN*NBEAM*sizeof(float));
     const uint8_t* mr_base=nullptr; const uint8_t* mr_end=nullptr; bool mr_reg=false;
     uint64_t snaps=0, imissed=0, snaps_pub=0; uint32_t frame=0;
-    fprintf(stderr,"[ula] 4-elem ULA X-engine (single-thread) -> %d ch x %d beams (d=%.2f lambda) dev %d @ %.0f Hz, shm %s\n",
-            NCHAN,NBEAM,ULA_DSPACE,g_device,fps,CORR_SHM);
+    fprintf(stderr,"[ula] %d-elem ULA X-engine (single-thread) -> %d ch x %d beams (d=%.2f lambda) dev %d @ %.0f Hz, shm %s\n",
+            NELEM,NCHAN,NBEAM,ULA_DSPACE,g_device,fps,CORR_SHM);
     auto t0=std::chrono::steady_clock::now(); auto last_pub=t0;
     while(!g_stop){
         if(seconds>0 && secs_since(t0)>=seconds) break;

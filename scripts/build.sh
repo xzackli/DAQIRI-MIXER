@@ -10,7 +10,8 @@ docker run --rm -v "$DIR":/work -w /work --entrypoint bash "$IMG" -lc "
   set -e
   echo '[build] rx_host_corr  (RX,  sm_120a / RTX 5070)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/rx_host_corr.cu $DQ -lcufft -o rx_host_corr
   echo '[build] tx_host   (TX,  sm_86   / A6000; host-mem, line rate)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_host.cu $DQ -o tx_host
-  echo '[build] rx_ula_corr   (4-elem ULA X-engine, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/rx_ula_corr.cu $DQ -lcufft -o rx_ula_corr
-  echo '[build] tx_ula        (4-elem ULA synth source, sm_86)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_ula.cu $DQ -o tx_ula
+  echo '[build] rx_ula_corr   (ULA X-engine, real FPGA wire layout, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/rx_ula_corr.cu $DQ -lcufft -o rx_ula_corr
+  echo '[build] tx_ula        (ULA synth source, real FPGA wire layout, sm_86)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_ula.cu $DQ -o tx_ula
+  echo '[build] ula_selftest  (faithful layout + angle self-test, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/ula_selftest.cu -lcufft -o ula_selftest
   echo '[build] peek32        (viewer)'                  ; g++ -O2 src/peek32.cpp -o peek32 -lrt
   echo built"
