@@ -76,3 +76,23 @@ upload, then run_mts): **run_mts -> True; ADC0 Latency(T1)=104, ADC2 Latency(T1)
 ADC0/ADC2 State 15/PLL1 after the 8MHz init; ADC1/ADC3 State 12 (not in the 0b0101 group, expected).
 STILL PENDING (bench): the coherent-tone fftconvolve argmax==0 phase-stability proof (needs a split CW
 tone to the SMAs) + repeatability across reprograms; run_mts alignment itself is now PROVEN. Script: ~/mts_run.py.
+
+## SKEW FIX APPLIED — canonical post-gearbox mux (2026-06-29 ~08:30, building)
+Explore-before-fix (2 explorations: local CASPER designs + web prior art) converged on ONE rule:
+the element-select must be CO-TIMED with the data it gates (never select-at-input toggled-by-output).
+Gated plan->verify->modify->verify (each with an INDEPENDENT cycle-accurate read-clock sim) chose+applied
+CANDIDATE 1 = MUX POST-GEARBOX (the ata_snap/LFAA "select at the framing stage" structure):
+  - Sim proof (3 independent models, baseline reproduces HW 9/72B exactly): post_gearbox = 0 mismatch
+    AND offset-INDEPENDENT; advance9 = 0 but KNIFE-EDGE (+-1 -> 1, the sim-vs-HW fragility -> rejected);
+    sideband-tag = 9 (relabels only); rd_eofdly = 10 (worse). Decisive: post-gearbox is phase-trim-free.
+  - Edit: DELETE rd_sel_mux (input-side); feed DPRAM1 -> existing gearbox A; ADD a BIT-FOR-BIT LOCKSTEP
+    gearbox B on DPRAM2 (reuse the single gb_streq/gb_wctr/gb_eofand strobes, no new explicit_period);
+    mux the two fully-gearboxed 512b words by elem_outmux (sel=elemctr, kept en=gb_eofand) at the OUTPUT,
+    feeding gb_mux512.in3. Select + packet boundary now both in the OUTPUT dense domain -> 0 skew by
+    construction. ~13 blocks, 100% downstream of the DPRAM explicit_period anchor.
+  - GATE CATCH: executor measured gearbox-A input latency = 3 (data_delay1+Mux3+Delay4), NOT the 2 the
+    plan listed; added a matching 'midb' stage so A and B stay lockstep (the decisive requirement).
+    verify-modify independently confirmed input-A=3 == input-B=3, anchor/channelizer/seqctr/elem@52 header
+    byte-identical. ready_to_rebuild=TRUE.
+  - REMAINING: rebuild .fpg (in progress) -> program -> test_mode ramp capture + boundary_verify.py,
+    target 0/1495 boundaries skewed. The phase-pin "advance-9" idea is DROPPED (knife-edge).
