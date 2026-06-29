@@ -1,0 +1,20 @@
+import casperfpga, time
+f=casperfpga.CasperFpga('192.168.2.101')
+FPG='/home/zackli/src/tutorials_devel/rfsoc/tut_onehundred_gbe/manas100g5/outputs/manas100g5_2026-06-27_0011.fpg'
+print('programming manas100g5...'); f.upload_to_ram_and_program(FPG); f.get_system_information(FPG)
+f.write_int('fft_shift',0xffff); f.write_int('acc_len',1024)
+f.write_int('cnt_rst',1); f.write_int('cnt_rst',0); time.sleep(0.3)
+f.write_int('sync',1); time.sleep(0.05); f.write_int('sync',0); time.sleep(1)
+f.write_int('eth_rst',1); f.write_int('est_rst_sync',1)
+f.write_int('dest_ip',(10<<24)|2); f.write_int('dest_port',4096)
+g=f.gbes['onehundred_gbe']
+g.configure_core((2<<40)+(2<<32)+1,'10.0.0.1',4096)
+g.set_single_arp_entry('10.0.0.2',0xb8cef6e56b5a)
+f.write_int('eth_rst',0); f.write_int('eth_en',1); f.write_int('est_rst_sync',0)
+f.write_int('sync',1); time.sleep(0.05); f.write_int('sync',0)
+time.sleep(1)
+a=f.read_uint('onehundred_gbe_gmac_reg_tx_packet_count'); ra=f.read_uint('onehundred_gbe_gmac_reg_tx_packet_rate')
+time.sleep(2)
+b=f.read_uint('onehundred_gbe_gmac_reg_tx_packet_count'); rb=f.read_uint('onehundred_gbe_gmac_reg_tx_packet_rate')
+print('BOARD TX: %d -> %d (%d pkts/2s = %.0f pps), tx_rate reg=%d/%d'%(a,b,(b-a)&0xffffffff,(b-a)/2.0,ra,rb))
+print('streaming (eth_en=1).')
