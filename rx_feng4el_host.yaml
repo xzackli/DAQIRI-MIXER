@@ -1,0 +1,40 @@
+%YAML 1.2
+---
+# Host-memory RX for the real RFSoC feng4el stream on digilab-transmit.
+# The RFSoC 100G QSFP is cabled to ens5f0np0, MAC b8:ce:f6:e5:6b:5a.
+# Wire contract: UDP dst 60000, payload 640 B, seq@48, elem@52.
+daqiri:
+  cfg:
+    version: 1
+    stream_type: "raw"
+    engine: "ibverbs"
+    master_core: 3
+    rx_meta_buffers: 65536
+    debug: false
+    log_level: "info"
+    loopback: ""
+
+    memory_regions:
+    - name: "Data_RX_HOST"
+      kind: "huge"
+      affinity: 0
+      num_bufs: 16384
+      buf_size: 1024
+
+    interfaces:
+    - name: "rx_port"
+      address: 0000:17:00.0
+      rx:
+        flow_isolation: true
+        queues:
+        - name: "rx_q_0"
+          id: 0
+          cpu_core: 9
+          batch_size: 1024
+          memory_regions:
+            - "Data_RX_HOST"
+        flows:
+        - name: "flow_0"
+          id: 0
+          action: {type: queue, id: 0}
+          match: {udp_dst: 60000}

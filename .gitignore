@@ -1,6 +1,7 @@
 # compiled binaries (no extension)
 /rx_ula_corr
 /rx_ula_corr_sm86
+/rx_feng4el_corr_sm86
 /tx_ula
 /ula_selftest
 /peek_ula
