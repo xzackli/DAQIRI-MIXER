@@ -5,9 +5,18 @@
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMG="${DAQIRI_IMG:-daqiri:local}"
+BIN="$DIR/rx_feng4el_corr_sm86"
+if [[ ! -x "$BIN" ]]; then
+  echo "missing $BIN; build it with docs/feng4el-gpu-rx.md" >&2
+  exit 1
+fi
+extra_args=()
+if [[ " $* " != *" --device "* ]]; then
+  extra_args+=(--device "${FENG4EL_GPU_DEVICE:-0}")
+fi
 exec docker run --rm --privileged --network host --gpus all \
   -e NVIDIA_DISABLE_REQUIRE=1 \
   --mount type=tmpfs,destination=/usr/local/cuda/compat \
   --ipc=host -v /dev/hugepages:/dev/hugepages --ulimit memlock=-1 \
   -v "$DIR":/work -w /work \
-  --entrypoint /work/rx_feng4el_corr_sm86 "$IMG" rx_feng4el_host.yaml --device 0 "$@"
+  --entrypoint /work/rx_feng4el_corr_sm86 "$IMG" rx_feng4el_host.yaml "${extra_args[@]}" "$@"

@@ -53,6 +53,10 @@ cd ~/DAQIRI-MIXER
 ./scripts/run_rx_feng4el.sh --seconds 4 --fps 2 --device 0
 ```
 
+The run script defaults to GPU device `0` unless `--device` is supplied or
+`FENG4EL_GPU_DEVICE` is set. It also checks that `rx_feng4el_corr_sm86` exists
+before starting the container.
+
 ## Live Test
 
 With the RFSoC left streaming `feng4el_2026-06-30_1943.fpg` to `10.0.0.2:60000`,
