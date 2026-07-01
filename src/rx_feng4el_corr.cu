@@ -81,7 +81,7 @@ static CorrULA* corr_open(){ shm_unlink(CORR_SHM); int fd=shm_open(CORR_SHM,O_CR
     CorrULA* c=(CorrULA*)p; std::memset(c,0,sizeof(CorrULA)); c->magic=0x554c4131; c->nchan=NCHAN; c->nbeam=NBEAM; return c; }
 
 static volatile std::sig_atomic_t g_stop=0; static void on_sig(int){g_stop=1;}
-static int g_device=1;
+static int g_device=0;
 static double secs_since(const std::chrono::steady_clock::time_point& t){
     return std::chrono::duration<double>(std::chrono::steady_clock::now()-t).count(); }
 static uint32_t load_be32_unaligned(const uint8_t* p){
