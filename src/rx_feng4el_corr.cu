@@ -84,6 +84,11 @@ static volatile std::sig_atomic_t g_stop=0; static void on_sig(int){g_stop=1;}
 static int g_device=1;
 static double secs_since(const std::chrono::steady_clock::time_point& t){
     return std::chrono::duration<double>(std::chrono::steady_clock::now()-t).count(); }
+static uint32_t load_be32_unaligned(const uint8_t* p){
+    uint32_t v;
+    std::memcpy(&v,p,sizeof(v));
+    return __builtin_bswap32(v);
+}
 
 int main(int argc,char**argv){
     if(argc<2){fprintf(stderr,"usage: %s <yaml> [--seconds N][--fps F][--device D]\n",argv[0]);return 1;}
@@ -121,19 +126,27 @@ int main(int argc,char**argv){
             if(p0){
                 if(!mr_reg){ mr_base=p0; CK(cudaHostRegister((void*)mr_base,MR_BYTES,cudaHostRegisterDefault));
                     mr_end=mr_base+MR_BYTES; mr_reg=true; fprintf(stderr,"[ula] MR %p %zuMB\n",(void*)mr_base,(size_t)(MR_BYTES>>20)); }
-                uint32_t seq0=__builtin_bswap32(*(const uint32_t*)(p0+ULA_SEQ_BYTE));
+                uint32_t seq0=load_be32_unaligned(p0+ULA_SEQ_BYTE);
                 int off=(int)((NELEM-(seq0%NELEM))%NELEM);   /* seq -> snapshot framing/ordering only */
                 for(int st=off; st+ULA_PPB<=npkts; st+=ULA_PPB){
                     /* Route each of the PPB packets into g_bb by its OWN byte-52 element index, so a
-                     * dropped packet can't rotate antenna identity (reviewer-4 drop-immune keying). */
+                     * dropped packet can't rotate antenna identity (reviewer-4 drop-immune keying).
+                     * Also require the four packets to share one sequence base; an element mask alone
+                     * would allow mixed-time covariance after a pathological drop/reorder window. */
                     unsigned seen_mask=0;
+                    bool seq_ok=true;
+                    uint32_t seq_base=0;
                     for(int j=0;j<ULA_PPB;++j){
                         const uint8_t* pk=(const uint8_t*)daqiri::get_packet_ptr(bu,st+j); if(!pk) continue;
                         if(pk<mr_base||pk+NB+ULA_HDR_BYTES>mr_end){imissed++;continue;}
+                        uint32_t seq=load_be32_unaligned(pk+ULA_SEQ_BYTE);
                         int e=(int)pk[ULA_ELEM_BYTE]; if(e<0||e>=NELEM){imissed++;continue;}
+                        uint32_t base=seq & ~(uint32_t)(NELEM-1);
+                        if(j==0) seq_base=base;
+                        if(base!=seq_base || (seq % NELEM)!=(uint32_t)e) seq_ok=false;
                         CK(cudaMemcpyAsync(g_bb+(size_t)e*NB,pk+ULA_HDR_BYTES,NB,cudaMemcpyHostToDevice,cs));
                         seen_mask |= (1u << e); }
-                    if(seen_mask != ((1u << NELEM) - 1u)){imissed++;continue;}   /* incomplete snapshot -> skip */
+                    if(!seq_ok || seen_mask != ((1u << NELEM) - 1u)){imissed++;continue;}   /* incomplete/mixed snapshot */
                     k_corr4<<<(NCHAN*VN+255)/256,256,0,cs>>>(g_bb,g_Vre,g_Vim);
                     snaps++; }
             }

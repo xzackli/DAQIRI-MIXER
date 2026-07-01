@@ -28,6 +28,9 @@ The RFSoC sends to `digilab-transmit:ens5f0np0`.
   - active spectrum at frame byte `106`
 
 The hardware capture showed tags cycling `0,1,2,3` and `seq % 4 == elem`.
+The GPU receiver enforces that contract before correlation: each four-packet
+snapshot must contain all four element tags, all packets must share the same
+`seq & ~3` base, and each packet must satisfy `seq % 4 == elem`.
 
 ## Files
 
@@ -81,3 +84,7 @@ This proves live RFSoC packet ingest into GPU covariance/beamforming. The displa
 angle is not yet a calibrated antenna result. The hardware capture showed live RFDC
 tags `elem0` and `elem2`; do a one-cable-at-a-time physical mapping and then add
 per-element phase calibration before treating the beam angle as a science value.
+
+The receiver assumes ordinary Ethernet + IPv4 + UDP framing with no VLAN tag and no
+IPv4 options. Those headers are why DAQIRI frame offsets are 42 bytes larger than
+the UDP-payload offsets.
