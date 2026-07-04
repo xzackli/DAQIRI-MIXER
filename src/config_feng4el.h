@@ -41,8 +41,11 @@
  * proves a gearbox half-swap is present, change only ULA_WIRE_SI here. */
 #define ULA_PROD_SI(t,c)  ((t)*ULA_NCHAN + (c))               /* time-major production index */
 #define ULA_WIRE_SI(i)    (i)
-#define ULA_WIRE_RE_OFF(i) (2*ULA_WIRE_SI(i))                 /* payload byte offset of re   */
-#define ULA_WIRE_IM_OFF(i) (2*ULA_WIRE_SI(i) + 1)             /* payload byte offset of im   */
+/* 100G core serializes the 512-bit word LSByte-first, so the wire byte order is Im,Re per channel
+ * (fable-derived from mlib + confirmed): payload EVEN byte = Im, ODD byte = Re. Autos are immune
+ * (|X|^2), but this matters for the correlator/beamform (else V -> conj(V), flipping fringe phase). */
+#define ULA_WIRE_RE_OFF(i) (2*ULA_WIRE_SI(i) + 1)             /* odd byte = Re */
+#define ULA_WIRE_IM_OFF(i) (2*ULA_WIRE_SI(i))                 /* even byte = Im */
 
 /* ---- beamforming (1-D angular response of the line) ---- */
 #define ULA_NBEAM   64     /* zero-padded 1-D FFT length -> NBEAM angular bins         */

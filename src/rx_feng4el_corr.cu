@@ -80,6 +80,15 @@ static CorrULA* corr_open(){ shm_unlink(CORR_SHM); int fd=shm_open(CORR_SHM,O_CR
     void* p=mmap(0,sizeof(CorrULA),PROT_READ|PROT_WRITE,MAP_SHARED,fd,0); close(fd);
     CorrULA* c=(CorrULA*)p; std::memset(c,0,sizeof(CorrULA)); c->magic=0x554c4131; c->nchan=NCHAN; c->nbeam=NBEAM; return c; }
 
+/* debug view: the 4 per-element AUTO-spectra (diagonal of V, a==b) = sum|X_a|^2 per channel.
+ * Published alongside the beamform so `peek_autos` can show each element's raw power spectrum. */
+struct AutoView{ uint32_t magic,nelem,nchan; volatile uint64_t write_seq; float autos[NELEM*NCHAN]; float vmax,vmin; };
+#define AUTO_SHM "/corr_autos"
+static AutoView* auto_open(){ shm_unlink(AUTO_SHM); int fd=shm_open(AUTO_SHM,O_CREAT|O_RDWR,0666);
+    if(fd<0){perror("shm autos");std::exit(1);} if(ftruncate(fd,sizeof(AutoView))){perror("ftrunc autos");std::exit(1);}
+    void* p=mmap(0,sizeof(AutoView),PROT_READ|PROT_WRITE,MAP_SHARED,fd,0); close(fd);
+    AutoView* a=(AutoView*)p; std::memset(a,0,sizeof(AutoView)); a->magic=0x4155544f; a->nelem=NELEM; a->nchan=NCHAN; return a; }
+
 static volatile std::sig_atomic_t g_stop=0; static void on_sig(int){g_stop=1;}
 static int g_device=0;
 static double secs_since(const std::chrono::steady_clock::time_point& t){
@@ -110,7 +119,9 @@ int main(int argc,char**argv){
     cufftHandle plan; int n1[1]={NBEAM};
     cufftPlanMany(&plan,1,n1,NULL,1,NBEAM,NULL,1,NBEAM,CUFFT_C2C,NCHAN); cufftSetStream(plan,cs);
     CorrULA* out=corr_open();
+    AutoView* aout=auto_open();
     float* h_img=(float*)malloc((size_t)NCHAN*NBEAM*sizeof(float));
+    float* h_Vre=(float*)malloc((size_t)NCHAN*VN*sizeof(float));   /* to pull the V diagonal (autos) to host */
     const uint8_t* mr_base=nullptr; const uint8_t* mr_end=nullptr; bool mr_reg=false;
     uint64_t snaps=0, imissed=0, snaps_pub=0; uint32_t frame=0;
     fprintf(stderr,"[ula] %d-elem ULA X-engine (single-thread) -> %d ch x %d beams (d=%.2f lambda) dev %d @ %.0f Hz, shm %s\n",
@@ -150,17 +161,29 @@ int main(int argc,char**argv){
                     k_corr4<<<(NCHAN*VN+255)/256,256,0,cs>>>(g_bb,g_Vre,g_Vim);
                     snaps++; }
             }
+            CK(cudaStreamSynchronize(cs));   /* FIX: finish the pending async g_bb H2D copies (and k_corr4)
+                                                BEFORE the DAQIRI ring buffers are freed/reused. Without this,
+                                                the copies run up to 1/fps later and read packets that the RX
+                                                ring (wraps ~every 4ms at 3.85Mpps) has already overwritten ->
+                                                scrambled per-element data (one input smeared across all 4). */
             daqiri::free_all_packets_and_burst_rx(bu);
         }
         /* publish on the fps timer, but ONLY when new snapshots have accumulated (else V is empty -> blank frame) */
         if(secs_since(last_pub) >= 1.0/fps && snaps>snaps_pub){
             CK(cudaStreamSynchronize(cs));                       /* all k_corr4 for this frame done */
+            CK(cudaMemcpyAsync(h_Vre,g_Vre,(size_t)NCHAN*VN*sizeof(float),cudaMemcpyDeviceToHost,cs)); /* autos = V diag */
             CK(cudaMemsetAsync(g_G,0,(size_t)NCHAN*NBEAM*sizeof(cufftComplex),cs));
             k_grid1d<<<(NCHAN*VN+255)/256,256,0,cs>>>(g_Vre,g_Vim,g_G);
             cufftExecC2C(plan,g_G,g_Img,CUFFT_FORWARD);
             k_publish<<<(NCHAN*NBEAM+255)/256,256,0,cs>>>(g_Img,d_img);
             CK(cudaMemcpyAsync(h_img,d_img,(size_t)NCHAN*NBEAM*sizeof(float),cudaMemcpyDeviceToHost,cs));
             CK(cudaStreamSynchronize(cs));
+            /* publish the 4 per-element auto-spectra (V diagonal: i = c*VN + a*NELEM + a) */
+            { float amx=-1e30f, amn=1e30f;
+              for(int a=0;a<NELEM;++a) for(int cc2=0;cc2<NCHAN;++cc2){
+                  float v=h_Vre[(size_t)cc2*VN + a*NELEM + a]; aout->autos[(size_t)a*NCHAN+cc2]=v;
+                  if(v>amx)amx=v; if(v<amn)amn=v; }
+              aout->vmax=amx; aout->vmin=amn; __atomic_store_n(&aout->write_seq,(uint64_t)frame+1,__ATOMIC_RELEASE); }
             float vmax=-1e30f,vmin=1e30f;
             for(int j=0;j<NCHAN*NBEAM;++j){ float v=h_img[j]; out->img[j]=v; vmax=v>vmax?v:vmax; vmin=v<vmin?v:vmin; }
             /* recovered angle from the BAND-CENTER channel (clean sin map; low channels are DC-dominated near 0deg) */
@@ -179,5 +202,6 @@ int main(int argc,char**argv){
     }
     fprintf(stderr,"[ula] stop after %u frames; snaps=%lu imissed=%lu\n",frame,(unsigned long)snaps,(unsigned long)imissed);
     if(mr_reg)cudaHostUnregister((void*)mr_base); munmap(out,sizeof(CorrULA)); shm_unlink(CORR_SHM);
+    munmap(aout,sizeof(AutoView)); shm_unlink(AUTO_SHM); free(h_Vre);
     daqiri::print_stats(); daqiri::shutdown(); return 0;
 }

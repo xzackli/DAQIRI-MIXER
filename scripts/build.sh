@@ -14,5 +14,8 @@ docker run --rm -v "$DIR":/work -w /work --entrypoint bash "$IMG" -lc "
   echo '[build] rx_feng4el_corr (RFSoC feng4el RX, sm_86 / A6000)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/rx_feng4el_corr.cu $DQ -lcufft -o rx_feng4el_corr_sm86
   echo '[build] tx_ula        (ULA synth source, real FPGA wire layout, sm_86)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_ula.cu $DQ -o tx_ula
   echo '[build] ula_selftest  (faithful layout + angle self-test, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/ula_selftest.cu -lcufft -o ula_selftest
-  echo '[build] peek32        (viewer)'                  ; g++ -O2 src/peek32.cpp -o peek32 -lrt
+  echo '[build] peek32        (256-elem sky viewer)'     ; g++ -O2 src/peek32.cpp -o peek32 -lrt
+  echo '[build] peek_ula_img  (feng4el ULA freq-vs-angle viewer)' ; g++ -O2 src/peek_ula_img.cpp -o peek_ula_img -lrt
+  echo '[build] peek_autos    (feng4el 4-element auto-spectra debug view)' ; g++ -O2 src/peek_autos.cpp -o peek_autos -lrt
+  echo '[build] ula_fakesrc   (viewer test fixture: synthetic /corr_ula + /corr_autos)' ; g++ -O2 src/ula_fakesrc.cpp -o ula_fakesrc -lrt
   echo built"

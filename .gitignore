@@ -17,3 +17,8 @@
 /rx_ula_corr_*
 __pycache__/
 *.pyc
+/peek_autos
+/peek_ula_img
+/ula_fakesrc
+/peek32
+/chan_id
