@@ -2,7 +2,10 @@
 ---
 # Host-memory RX for the real RFSoC feng4el stream on digilab-transmit.
 # The RFSoC 100G QSFP is cabled to ens5f0np0, MAC b8:ce:f6:e5:6b:5a.
-# Wire contract: UDP dst 60000, payload 640 B, seq@48, elem@52.
+# Current feng4el_gate wire contract: UDP dst 60000, payload 576 B
+# (64 B CASPER header + 512 B spectrum), seq@48, elem@52.
+# Legacy pre-fix feng4el payloads were 640 B; the extra 64 B tail is ignored.
+# Channels are natural order in gate builds: wire channel == FFT bin, freq MHz = 3.84*bin.
 daqiri:
   cfg:
     version: 1

@@ -1,6 +1,6 @@
 # RFSoC `feng4el` GPU RX
 
-Date: 2026-07-01
+Date: 2026-07-04
 
 ## Purpose
 
@@ -17,11 +17,18 @@ The RFSoC sends to `digilab-transmit:ens5f0np0`.
 - NIC PCI address: `0000:17:00.0`
 - NIC MAC: `b8:ce:f6:e5:6b:5a`
 - UDP destination port: `60000`
-- UDP payload length: `640` bytes
+- UDP payload length: `576` bytes for current `feng4el_gate` builds
 - CASPER header: first `64` bytes of UDP payload
 - `seq`: big-endian `uint32` at UDP payload byte `48`
 - `elem`: `uint8` at UDP payload byte `52`
 - Active spectrum: first `512` bytes after the 64-byte CASPER header
+- Legacy pre-fix `feng4el` builds emitted `640` byte UDP payloads. The extra
+  `64` byte tail was a benign duplicate/extra word, and this receiver only reads
+  the first `512` spectrum bytes, so both packet lengths decode identically.
+- Current `feng4el_gate` builds emit channels in natural frequency order:
+  wire channel equals FFT bin, `Df = 3.84 MHz`, and `true_freq_MHz = 3.84 * bin`.
+  The old wire-channel scramble and `bin_from_wire` un-permute are legacy only
+  for captures from stock pre-gate `feng4el` builds.
 - DAQIRI raw pointer includes Ethernet + IPv4 + UDP, so receiver offsets are:
   - `seq` at frame byte `90`
   - `elem` at frame byte `94`
@@ -36,14 +43,22 @@ snapshot must contain all four element tags, all packets must share the same
 
 - `src/config_feng4el.h`
 - `src/rx_feng4el_corr.cu`
+- `src/chan_id.cu`
 - `rx_feng4el_host.yaml`
 - `scripts/run_rx_feng4el.sh`
+- `scripts/run_chan_id.sh`
 
 Build only this target:
 
 ```sh
 docker run --rm -v "$PWD":/work -w /work --entrypoint bash daqiri:local -lc \
 'DQ="-I/opt/daqiri/include -L/opt/daqiri/lib -ldaqiri -lcuda -L/usr/local/cuda/lib64/stubs -Xlinker -rpath -Xlinker /opt/daqiri/lib -lcudart -lrt -lpthread"; nvcc -O3 -std=c++17 -arch=sm_86 src/rx_feng4el_corr.cu $DQ -lcufft -o rx_feng4el_corr_sm86'
+```
+
+Or build all local artifacts, including `chan_id`:
+
+```sh
+./scripts/build.sh
 ```
 
 Run on `digilab-transmit`:

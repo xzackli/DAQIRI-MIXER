@@ -1,16 +1,18 @@
 /* config_feng4el.h — real RFSoC feng4el packet contract.
  *
- * Verified from the 2026-07-01 hardware capture and DAQIRI capture_dump:
- *   - UDP payload = 640 B: 64 B header + 576 B payload words.
+ * Current RFSoC 4x2 F-engine contract, after the 2026-07-02 packetizer over-read
+ * fix and the 2026-07-03 feng4el_gate channel-order update:
+ *   - UDP payload = 576 B: 64 B CASPER header + 512 B spectrum.
+ *   - Legacy pre-fix feng4el builds emitted 640 B; the final 64 B was a benign
+ *     duplicate/extra tail and the receiver decodes only the first 512 spectrum bytes.
  *   - pcap/UDP offsets: seq = uint32 big-endian @ byte 48, elem = uint8 @ byte 52.
  *   - DAQIRI raw pointer includes Ethernet+IPv4+UDP (42 B), so the GPU receiver uses
  *     frame offsets: seq @ 90, elem @ 94, active payload @ 106.
  *   - tags cycle 0,1,2,3 and seq % 4 == elem.
  *   - The first 512 payload bytes contain one complete 256-channel int8-complex spectrum.
- *
- * The last 64 payload bytes are currently ignored by the GPU receiver. They are packetizer
- * padding/extra word relative to one full 256-channel spectrum, and the hardware decoder
- * used for proof also ignored them.
+ *   - feng4el_gate emits NATURAL channel order: wire channel == FFT bin,
+ *     true_freq_MHz = 3.84 * bin. The old wire-channel scramble and bin_from_wire()
+ *     un-permute are legacy only for captures from stock pre-gate feng4el builds.
  */
 #pragma once
 
@@ -25,10 +27,10 @@
 
 /* ---- payload / wire ---- */
 #define ULA_PAYLOAD_BYTES 512    /* active spectrum bytes: NCHAN*TPKT*2 = 256*1*2       */
-#define ULA_UDP_PAYLOAD_BYTES 640 /* full UDP payload captured from the board            */
+#define ULA_UDP_PAYLOAD_BYTES 576 /* current gate UDP payload; legacy pre-fix was 640 B     */
 #define ULA_L2UDP_BYTES   42     /* Ethernet + IPv4 + UDP bytes before CASPER header  */
 #define ULA_HDR_BYTES     106    /* DAQIRI frame offset of active int8 spectrum       */
-#define ULA_WIRE_BYTES    682    /* L2 frame bytes through UDP payload                */
+#define ULA_WIRE_BYTES    618    /* L2 frame bytes through current 576 B UDP payload    */
 #define ULA_SEQ_BYTE      90     /* DAQIRI frame offset: 42 + UDP-payload byte 48     */
 #define ULA_SEQ_BIT_OFFSET 720   /* = ULA_SEQ_BYTE*8                                  */
 #define ULA_SEQ_BIT_WIDTH 32

@@ -12,6 +12,7 @@ docker run --rm -v "$DIR":/work -w /work --entrypoint bash "$IMG" -lc "
   echo '[build] tx_host   (TX,  sm_86   / A6000; host-mem, line rate)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_host.cu $DQ -o tx_host
   echo '[build] rx_ula_corr   (ULA X-engine, real FPGA wire layout, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/rx_ula_corr.cu $DQ -lcufft -o rx_ula_corr
   echo '[build] rx_feng4el_corr (RFSoC feng4el RX, sm_86 / A6000)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/rx_feng4el_corr.cu $DQ -lcufft -o rx_feng4el_corr_sm86
+  echo '[build] chan_id       (RFSoC feng4el wire channel-ID, sm_86 / A6000)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/chan_id.cu $DQ -o chan_id
   echo '[build] tx_ula        (ULA synth source, real FPGA wire layout, sm_86)' ; nvcc -O3 -std=c++17 -arch=sm_86 src/tx_ula.cu $DQ -o tx_ula
   echo '[build] ula_selftest  (faithful layout + angle self-test, sm_120a)' ; nvcc -O3 -std=c++17 -arch=sm_120a src/ula_selftest.cu -lcufft -o ula_selftest
   echo '[build] peek32        (256-elem sky viewer)'     ; g++ -O2 src/peek32.cpp -o peek32 -lrt

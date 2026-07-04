@@ -1,6 +1,6 @@
 /* chan_id.cu — RAW wire channel-ID for feng4el_gate hardware validation (NO un-permute).
  * Captures raw packets via DAQIRI ibverbs, accumulates per-element per-channel power
- * directly from wire byte order: spectrum @frame byte 106, 256 ch x [Re(even),Im(odd)] int8.
+ * directly from wire byte order: spectrum @frame byte 106, 256 ch x [Im(even),Re(odd)] int8.
  * seq = BE uint32 @90, elem = uint8 @94. Also framing spot-check: seq%4==elem, seq monotonic.
  * usage: chan_id <yaml> [bursts=2000]
  */
@@ -47,7 +47,7 @@ int main(int argc,char**argv){
             if(dumped<4){ printf("sample pkt: seq=%u elem=%u bytes[88..96]:",seq,el);
                 for(int k=88;k<97;++k) printf(" %02x",p[k]); printf("\n"); dumped++; }
             for(int c=0;c<NCH;++c){
-                int re=(int8_t)p[SPEC_OFF+2*c], im=(int8_t)p[SPEC_OFF+2*c+1];
+                int im=(int8_t)p[SPEC_OFF+2*c], re=(int8_t)p[SPEC_OFF+2*c+1];
                 pw[el][c]+=(double)re*re+(double)im*im;
             }
             npkt[el]++; tot++;

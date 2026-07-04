@@ -2,6 +2,8 @@
  * rx_feng4el_corr (the diagonal of V: sum|X_a|^2 per channel for each element). NO beamforming, NO
  * cross-correlation -- just each element's raw power spectrum, so you can see which input carries
  * signal and at which channel. Inject a tone and it shows up as a bright vertical line.
+ * feng4el_gate emits natural channel order (wire channel == FFT bin). Set
+ * PEEK_AUTOS_LEGACY_PERMUTE=1 only for old stock-feng4el captures that still need bin_from_wire().
  *
  * PIXEL rendering: a true-color (24-bit ANSI) raster using upper-half-block glyphs (U+2580) so each
  * character cell packs TWO vertically-stacked pixels -> a real colormapped image in the terminal, not
@@ -14,6 +16,7 @@
  */
 #include <cstdio>
 #include <cstdint>
+#include <cstdlib>
 #include <cmath>
 #include <csignal>
 #include <algorithm>
@@ -42,10 +45,12 @@ static void cmap(float t,int&R,int&G,int&B){
     R=252;G=255;B=164;
 }
 
-/* wire payload channel index -> true FFT bin (fable-derived from mlib source + hardware-verified 28/29).
- * true frequency = DF_MHZ * bin. fabric 1966.08 MSPS, 512-pt real FFT -> Df=3.84 MHz, Nyquist 983 MHz,
- * no aliasing, no NCO offset. unscramble is ON but leaves a base-4 digit rotation + LSByte-first word
- * reversal, which this inverts. */
+/* Natural feng4el_gate channel order: wire channel == true FFT bin.
+ * true frequency = DF_MHZ * bin. fabric 1966.08 MSPS, 512-pt real FFT -> Df=3.84 MHz,
+ * Nyquist 983 MHz, no aliasing, no NCO offset.
+ *
+ * Legacy stock-feng4el captures used a scrambled wire order; bin_from_wire() inverts that old
+ * base-4 digit rotation + LSByte-first word reversal when PEEK_AUTOS_LEGACY_PERMUTE=1. */
 #define DF_MHZ 3.84f
 static int bin_from_wire(int k){
     int Wd=k>>5, r=31-(k&31), c=r>>2, q=r&3;
@@ -65,6 +70,8 @@ int main(int argc,char**argv){
     if(p==MAP_FAILED){ perror("mmap"); return 1; }
     AutoView* a=(AutoView*)p;
     if(a->magic!=0x4155544f){ printf("not a corr_autos shm (magic %08x)\n",a->magic); return 2; }
+    const bool legacy_permute = std::getenv("PEEK_AUTOS_LEGACY_PERMUTE") &&
+                                std::getenv("PEEK_AUTOS_LEGACY_PERMUTE")[0]=='1';
 
     const int BIN=NCHAN/W;
     uint64_t last=0; int frames=0;
@@ -82,8 +89,11 @@ int main(int argc,char**argv){
         const float RANGE_DB=45.f; float ref=(a->vmax>0)?a->vmax:1.f;
         static float sp_true[NELEM][NCHAN];
         for(int e=0;e<NELEM;++e){
-            /* remap wire-order autos -> true frequency-bin order */
-            for(int c=0;c<NCHAN;++c) sp_true[e][bin_from_wire(c)]=a->autos[(size_t)e*NCHAN+c];
+            /* default: natural gate order. Legacy mode remaps old scrambled wire-order autos. */
+            for(int c=0;c<NCHAN;++c){
+                int bin = legacy_permute ? bin_from_wire(c) : c;
+                sp_true[e][bin]=a->autos[(size_t)e*NCHAN+c];
+            }
             const float* sp=sp_true[e]; float emax=-1e30f; int epk=0;
             for(int c=0;c<W;++c){ float m=-1e30f; for(int j=0;j<BIN;++j){ float v=sp[c*BIN+j]; if(v>m)m=v; }
                 float tv=(m>0)?1.f+(10.f*log10f(m/ref))/RANGE_DB:0.f;
@@ -95,8 +105,8 @@ int main(int argc,char**argv){
         }
 
         printf("\033[H");
-        printf("feng4el AUTO-spectra (pixel)  seq=%-6lu   FREQ MHz -->   true order  Df=%.2fMHz  inferno=power  %.0fdB\033[K\n",
-               (unsigned long)s, DF_MHZ, RANGE_DB);
+        printf("feng4el AUTO-spectra (pixel)  seq=%-6lu   FREQ MHz -->   %s order  Df=%.2fMHz  inferno=power  %.0fdB\033[K\n",
+               (unsigned long)s, legacy_permute ? "legacy-permuted" : "natural", DF_MHZ, RANGE_DB);
         /* half-block raster: each text row = 2 pixel rows (top=fg, bottom=bg); element = pixelrow/BAND */
         for(int cr=0; cr<IMGH/2; ++cr){
             int etop=(2*cr)/BAND, ebot=(2*cr+1)/BAND;
