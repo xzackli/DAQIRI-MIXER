@@ -33,7 +33,7 @@
 #include <daqiri/daqiri.h>
 #include "config.h"
 #define CK(x) do{cudaError_t e_=(x);if(e_){fprintf(stderr,"CUDA %s:%d:%s\n",__FILE__,__LINE__,cudaGetErrorString(e_));std::exit(1);}}while(0)
-#define NB        (MIXER_NCH*MIXER_TPKT)           /* 8192 wire bytes per heap (planar int8 re|im) */
+#define NB        MIXER_PAYLOAD_BYTES               /* 8192 wire bytes per heap (planar int8 re|im) */
 #define SAMP_PER_HEAP (NB/2)                  /* 4096 complex samples per antenna heap */
 #define NCUBE     128                         /* frequency channels (= the per-channel V planes) */
 #define HBATCH    32                          /* heaps per V-update */

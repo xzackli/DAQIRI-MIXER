@@ -43,7 +43,7 @@ __global__ void k_sky(uint8_t* __restrict__ sky, float l, float m){
     int a = blockIdx.x; int c = threadIdx.x;
     if (a >= MIXER_NANT) return;
     uint8_t* pay = sky + (size_t)a*MIXER_PAYLOAD_BYTES;
-    if (c < MIXER_NCH/2){                              /* 128 active channels */
+    if (c < MIXER_ACTIVE_NCH){                          /* 128 active wire channels */
         int px = a & 15, qy = a >> 4;
         float Apl = 0.71f * Astar * sqrtf(2.0f*(float)c/(float)(MIXER_NCH-1));  /* planet ~30% of star */
         float phi = (float)M_PI * (px*l + qy*m);
