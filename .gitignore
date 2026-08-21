@@ -22,3 +22,5 @@ __pycache__/
 /ula_fakesrc
 /peek32
 /chan_id
+/tx_cache
+/dram_bw
