@@ -1,6 +1,6 @@
 /* config.h — the packet wire contract as compile-time constants. These #defines are what the
  * tx / rx CUDA code compiles against: the kernels need the seq offset, the [channel][time]
- * payload layout, NANT/NCH/TPKT, and the int8 packing at compile time to build headers and index
+ * payload layout, NANT/ACTIVE_NCH/TPKT, and the int8 packing at compile time to build headers and index
  * the corner-turn (you can't #include a YAML). The DAQIRI YAMLs hold the same contract for the
  * *transport* side — what DAQIRI needs to capture/route packets (buffer sizes, seq bit_offset,
  * packets_per_batch, flow steering). A few values appear in both (seq at bit 384, the 8256 B heap,
@@ -25,9 +25,10 @@
 
 #define MIXER_NANT          256   /* 16x16 elements                              */
 #define MIXER_GRID          16
-#define MIXER_NCH           256   /* channels per antenna                        */
+#define MIXER_NCH           256   /* generator's channel sweep; not wire channels */
+#define MIXER_ACTIVE_NCH    128   /* active wire channels per antenna             */
 #define MIXER_TPKT          32    /* time samples per packet (CASPER heap depth) */
-#define MIXER_PAYLOAD_BYTES 8192  /* NCH*TPKT * 1 byte (int4 re<<4 | im)         */
+#define MIXER_PAYLOAD_BYTES 8192  /* 2 planar int8 components * ACTIVE_NCH * TPKT */
 #define MIXER_HDR_BYTES     64    /* payload_byte_offset                         */
 #define MIXER_WIRE_BYTES    8256  /* HDR + PAYLOAD (jumbo)                       */
 
